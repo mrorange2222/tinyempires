@@ -1,0 +1,77 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://ui/main.gd" id="1_main"]
+[ext_resource type="Script" path="res://ui/hex_board.gd" id="2_board"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_play_area"]
+bg_color = Color(0.09, 0.11, 0.14, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.22, 0.26, 0.31, 1)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+
+[node name="Main" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_main")
+
+[node name="Margin" type="MarginContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 32
+theme_override_constants/margin_top = 24
+theme_override_constants/margin_right = 32
+theme_override_constants/margin_bottom = 24
+
+[node name="Layout" type="VBoxContainer" parent="Margin"]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="Title" type="Label" parent="Margin/Layout"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 32
+text = "The Tiny Empire"
+
+[node name="Instructions" type="Label" parent="Margin/Layout"]
+layout_mode = 2
+text = "Click land to inspect it. Scroll to explore; Shift + wheel scrolls sideways."
+autowrap_mode = 2
+
+[node name="PlayArea" type="PanelContainer" parent="Margin/Layout"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_styles/panel = SubResource("StyleBoxFlat_play_area")
+
+[node name="Scroll" type="ScrollContainer" parent="Margin/Layout/PlayArea"]
+layout_mode = 2
+horizontal_scroll_mode = 1
+vertical_scroll_mode = 1
+
+[node name="Board" type="Control" parent="Margin/Layout/PlayArea/Scroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+script = ExtResource("2_board")
+
+[node name="Legend" type="Label" parent="Margin/Layout"]
+layout_mode = 2
+text = "Grassland preview - empty tiles. Water is not selectable."
+autowrap_mode = 2
+
+[node name="Selection" type="Label" parent="Margin/Layout"]
+layout_mode = 2
+text = "Select land to see its terrain and hex coordinates."
+autowrap_mode = 2
