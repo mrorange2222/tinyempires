@@ -5,33 +5,58 @@ with Linux and Windows as desktop targets. Mobile is deferred.
 
 ## Current milestone
 
-[MAP-004: Empty grassland and non-clickable water](doc/tickets/MAP-004.md),
-following [MAP-003: Larger scrollable board and natural still water](doc/tickets/MAP-003.md),
-following [MAP-002: Tilted 2D board](doc/tickets/MAP-002.md),
-[MAP-001: Clickable hex island mock-up](doc/tickets/MAP-001.md) and
-[BOOT-001: Bootstrap the desktop canvas](doc/tickets/BOOT-001.md).
-The project shows a fixed irregular hex island with 35 land tiles and
-surrounding water. Left-click land to inspect its terrain and axial coordinates.
-All land currently uses the default empty plains tile: softly textured grass,
-subtle edge lighting, and earthy coastline sides, without letters or objects.
-Forest and mountain placement is deferred until later terrain-art passes.
-The map uses a tilted 2D projection, raised land edges, and subtle coastline
-shadows, not a 3D scene. Visible coastline faces also select their land tile.
-Hexes now use a fixed 76-pixel radius instead of shrinking to fit. Scrollbars
-expose the full board: use the mouse wheel vertically, Shift + wheel horizontally,
-or drag either scrollbar. The view starts centered on the island.
-Water is a continuous static shader with deeper offshore blues, turquoise
-shallows, subtle surface highlights, and shoreline accents. Water has no grid
-lines or letter markers and is not clickable. Clicking it leaves the current
-selection and readout unchanged. No animation or external assets are used.
-The highlighted tile is a selection, not ownership. There are no turns,
-resources, or combat yet.
+[Issue #2: Rules v0.2, armies on tiles](https://github.com/mrorange2222/tinyempires/issues/2),
+following [issue #1](https://github.com/mrorange2222/tinyempires/issues/1).
+One player (blue) against one computer rival (coral) on a 35-tile island.
+Full rules: [Rules v0.2](doc/rules-v0.2-armies-proposal.md).
+
+### Play
+
+- Each kingdom starts with 6 gold, 3 tiles, and armies on them: capital 3,
+  the two other tiles 1 each. Numbers on tiles are armies.
+- **Click one of your tiles.** The panel offers **Recruit +2 armies here**
+  (3 gold) and **Improve** (3 gold, +1 gold per round, once per tile).
+- **Then click a neighbouring tile** to target it (white outline and arrow):
+  - your tile: **Move** armies there; pick how many with - / +;
+  - enemy tile: **Attack** with the chosen armies; the button shows your chance
+    and the panel shows what happens if you win or lose;
+  - unclaimed land: **Claim** it (3 gold; it starts with no armies).
+  Click a target a second time to select it instead.
+- Each army has **2 steps** per turn: move twice, move then attack, or just
+  attack (attacking ends its turn). The panel shows how many armies can act
+  and how many steps they have. A bright dot on a badge means armies there
+  can still act. Recruits defend at once but act from your next turn. Gold
+  actions are unlimited while you have gold.
+- **Battle:** armies sent + a 0-2 roll against defenders (+2 on a capital)
+  + a 0-2 roll; ties go to the defender. Each side loses half the other
+  side's armies, rounded up. Winners move in (at least 1). A tile with no
+  defenders falls without a battle. Dice appear in Recent moves.
+- Press **End turn**. The rival plays the same rules with no bonuses, **one
+  move at a time** (0.7 s apart): each move appears in Recent moves, its tiles
+  get a coral dot, and the latest gets a bold ring. Then income:
+  **2 + owned tiles + improvements**.
+- **Victory:** capture the rival capital, or hold more land after round 20
+  (equal land is a draw). **Rules** in the header explains everything.
+- **Exit** in the header closes the game after a confirmation (the match is
+  not saved).
+
+Trees, hills, grass and flowers on the land are **decoration only**; all land
+plays the same. The top bar uses icons: coin = gold (income next round),
+shield = armies, hex = land.
+
+The layout fills the window; hexes shrink to show the whole island and the
+map scrolls only when the window is very small. Water is not clickable.
+There are no saves, diplomacy, trade, research, or extra resources.
 
 ## Tools
 
 - Godot **4.7.2 stable**, standard edition (GDScript, not .NET).
 - Compatibility renderer for the 2D desktop interface.
 - No third-party plugins or package-manager dependencies.
+- Fonts (approved 2026-11-06): [Cinzel](https://github.com/NDISCOVER/Cinzel)
+  for titles and [Nunito](https://github.com/googlefonts/nunito) for text,
+  both under the SIL Open Font License 1.1. Licences are in `assets/fonts/`
+  and must ship with any distributed build.
 
 The approved local editor lives in `.tools/godot/4.7.2/` and is not versioned.
 It was downloaded from the official
@@ -53,7 +78,7 @@ From the project directory:
 ```
 
 The game opens in a resizable 1280 x 800 window with an 800 x 600 minimum.
-Close the window to exit. There are no game actions or save files yet.
+Close the window to exit. Progress is not saved; New match resets the game.
 
 ## Smoke checks
 
@@ -64,28 +89,41 @@ Close the window to exit. There are no game actions or save files yet.
 # Load the main scene and run ten frames without a desktop window.
 ./.tools/godot/4.7.2/Godot_v4.7.2-stable_linux.x86_64 --headless --path . --quit-after 10
 
+# Test exact economy, legal/illegal actions, combat, AI, complete wins/losses.
+./.tools/godot/4.7.2/Godot_v4.7.2-stable_linux.x86_64 --headless --path . --script res://tests/game_rules.gd
+
+# Test gameplay buttons, battle confirmation, result screens, and restart.
+./.tools/godot/4.7.2/Godot_v4.7.2-stable_linux.x86_64 --headless --path . --script res://tests/game_ui.gd
+
 # Test map data, connectivity, scrolling, tilted hex/shore selection, and resizing.
 ./.tools/godot/4.7.2/Godot_v4.7.2-stable_linux.x86_64 --headless --path . --script res://tests/map_smoke.gd
 ```
 
 Headless checks do not verify rendering. Also launch the game normally and check
 the terrain, selection highlight, information readout, and resizing behavior.
-Run the same map smoke script without `--headless` to exercise graphical startup.
+Run the UI and map smoke scripts without `--headless` to exercise graphical startup.
+These checks validate implementation, not game balance or fun.
 
 ## Structure and next steps
 
 - `project.godot`: engine configuration and main-scene selection.
 - `scenes/main.tscn`: the desktop map layout.
 - `map/island_map.gd`: fixed terrain data and hex-neighbor directions.
-- `ui/hex_board.gd`: hex rendering and pointer selection.
+- `ui/hex_board.gd`: hex rendering, decorative terrain, army badges, and pointer selection.
 - `ui/water.gdshader`: static water depth colors, surface detail, and shoreline.
-- `ui/main.gd`: selection information readout.
+- `ui/icon.gd`: small vector icons (coin, shield, hex, crown).
+- `assets/fonts/`: Cinzel and Nunito fonts with their OFL licences.
+- `game/empire_game.gd`: match rules (tile armies, seeded dice) and the computer player.
+- `ui/main.gd`: match presentation, action wiring, battle confirmation, and restart.
+- `tests/game_rules.gd`: rule checks with forced dice, AI-vs-AI full matches.
+- `tests/game_ui.gd`: viewport-driven gameplay and result screen checks.
 - `tests/map_smoke.gd`: executable map and interface checks.
 - [Design specification](doc/the-tiny-empire-game-design-spec-v0.1.md): product
   concept and unresolved gameplay decisions.
 
-Define the first playable rules and approve a follow-up ticket before adding
-gameplay. Keep future game rules separate from scene/UI code.
+Playtest the current rules before adding systems. Record what choices feel
+interesting, whether repeated attacks stall, and how long matches take. See the
+[approved rules and known balance risks](doc/the-tiny-empire-game-design-spec-v0.1.md).
 
 ## Desktop exports
 
