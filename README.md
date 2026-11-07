@@ -25,12 +25,16 @@ Full rules: [Rules v0.2](doc/rules-v0.2-armies-proposal.md).
 - Each army has **2 steps** per turn: move twice, move then attack, or just
   attack (attacking ends its turn). The panel shows how many armies can act
   and how many steps they have. A bright dot on a badge means armies there
-  can still act. Recruits defend at once but act from your next turn. Gold
-  actions are unlimited while you have gold.
+  can still act. Recruiting uses one of the recruits' steps, so they can move
+  or attack once right away. Gold actions are unlimited while you have gold.
 - **Battle:** armies sent + a 0-2 roll against defenders (+2 on a capital)
   + a 0-2 roll; ties go to the defender. Each side loses half the other
-  side's armies, rounded up. Winners move in (at least 1). A tile with no
-  defenders falls without a battle. Dice appear in Recent moves.
+  side's armies, rounded up. Winners move in (at least 1). Defenders who
+  survive losing a tile retreat to the friendly neighbour closest to their
+  capital, or are lost if there is none. A tile with no defenders falls
+  without a battle. Dice appear in Recent moves.
+- The rival has a hidden **personality** each match (Conqueror, Builder,
+  Raider or Guardian) and varying moods, revealed on the result screen.
 - Press **End turn**. The rival plays the same rules with no bonuses, **one
   move at a time** (0.7 s apart): each move appears in Recent moves, its tiles
   get a coral dot, and the latest gets a bold ring. Then income:
@@ -113,7 +117,9 @@ These checks validate implementation, not game balance or fun.
 - `ui/water.gdshader`: static water depth colors, surface detail, and shoreline.
 - `ui/icon.gd`: small vector icons (coin, shield, hex, crown).
 - `assets/fonts/`: Cinzel and Nunito fonts with their OFL licences.
-- `game/empire_game.gd`: match rules (tile armies, seeded dice) and the computer player.
+- `game/empire_game.gd`: match rules (tile armies, seeded dice).
+- `game/ai/`: the computer player: shared planner, board analysis, and
+  personalities as data files. See [doc/ai.md](doc/ai.md).
 - `ui/main.gd`: match presentation, action wiring, battle confirmation, and restart.
 - `tests/game_rules.gd`: rule checks with forced dice, AI-vs-AI full matches.
 - `tests/game_ui.gd`: viewport-driven gameplay and result screen checks.

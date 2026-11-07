@@ -1,0 +1,19 @@
+[gd_resource type="Resource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://game/ai/ai_personality.gd" id="1_personality"]
+
+[resource]
+script = ExtResource("1_personality")
+display_name = "Raider"
+description = "picking off weak border tiles"
+min_chance = 0.6
+attack_from_round = 2
+capital_bonus = 5.0
+weak_target_bias = 1.5
+capital_garrison = 2
+defend_slack = 0
+improve_every = 3
+land_margin = 1
+claim_near_home = false
+capital_staging = -2
+noise = 3.0

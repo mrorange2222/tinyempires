@@ -1,0 +1,19 @@
+[gd_resource type="Resource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://game/ai/ai_personality.gd" id="1_personality"]
+
+[resource]
+script = ExtResource("1_personality")
+display_name = "Guardian"
+description = "cautious, defending its capital"
+min_chance = 0.85
+attack_from_round = 4
+capital_bonus = 25.0
+weak_target_bias = 0.8
+capital_garrison = 4
+defend_slack = 2
+improve_every = 2
+land_margin = 2
+claim_near_home = true
+capital_staging = 0
+noise = 2.0

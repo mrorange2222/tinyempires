@@ -1,6 +1,8 @@
 extends RefCounted
 
 const IslandMap = preload("res://map/island_map.gd")
+const AiPlayer = preload("res://game/ai/ai_player.gd")
+const AiPersonalities = preload("res://game/ai/ai_personalities.gd")
 const PLAYER := 0
 const RIVAL := 1
 const NEUTRAL := -1
@@ -40,15 +42,21 @@ var last_battle: Dictionary = {}
 var rng := RandomNumberGenerator.new()
 # Tests may queue dice results (attacker roll, then defender roll).
 var forced_rolls: Array[int] = []
-var _improved_this_turn := false
-var _ai_actions := 0
+# Read by the computer player.
+var improved_this_turn := false
+var ai_actions := 0
 
 
 func _init(seed_value: int = -1) -> void:
 	if seed_value >= 0:
 		rng.seed = seed_value
+		ai_rng.seed = seed_value * 7919 + 1
 	else:
 		rng.randomize()
+		ai_rng.randomize()
+	var names := AiPersonalities.names()
+	for side in [PLAYER, RIVAL]:
+		set_ai_style(side, names[ai_rng.randi_range(0, names.size() - 1)])
 	for tile: Vector2i in terrain:
 		if terrain[tile] != "Water":
 			owners[tile] = NEUTRAL
@@ -139,12 +147,37 @@ static func win_chance(sent: int, defense_value: int) -> float:
 func battle_preview(target: Vector2i, sent: int) -> Dictionary:
 	var defenders: int = armies.get(target, 0)
 	var attacker_loss := ceili(defenders / 2.0)
+	var defender_loss := mini(defenders, ceili(sent / 2.0))
+	var escape := retreat_tile(target)
 	return {
 		"chance": win_chance(sent, defense(target)),
 		"win_survivors": sent - mini(sent - 1, attacker_loss),
+		"win_retreat": defenders - defender_loss if escape != NO_TILE else 0,
+		"win_retreat_lost": defenders - defender_loss if escape == NO_TILE else 0,
+		"retreat_tile": escape,
 		"lose_attacker_loss": mini(sent, attacker_loss),
-		"lose_defender_loss": mini(defenders, ceili(sent / 2.0)),
+		"lose_defender_loss": defender_loss,
 	}
+
+
+# Where surviving defenders of a captured tile withdraw: the adjacent friendly
+# tile closest to their capital (ties: the one with more armies), or none.
+func retreat_tile(tile: Vector2i) -> Vector2i:
+	var side: int = owners.get(tile, NEUTRAL)
+	if side == NEUTRAL:
+		return NO_TILE
+	var best := NO_TILE
+	for other in neighbors(tile):
+		if owners[other] != side:
+			continue
+		if best == NO_TILE:
+			best = other
+			continue
+		var distance := hex_distance(other, kingdoms[side].capital)
+		var best_distance := hex_distance(best, kingdoms[side].capital)
+		if distance < best_distance or (distance == best_distance and armies[other] > armies[best]):
+			best = other
+	return best
 
 
 func action_error(action: String, tile: Vector2i, target: Vector2i = NO_TILE, count: int = 0) -> String:
@@ -212,11 +245,13 @@ func execute(action: String, tile: Vector2i, target: Vector2i = NO_TILE, count: 
 		"improve":
 			kingdom.gold -= IMPROVE_COST
 			improvements[tile] = true
-			_improved_this_turn = true
+			improved_this_turn = true
 			note = "improved a tile (+1 gold per round)."
 		"recruit":
 			kingdom.gold -= RECRUIT_COST
 			armies[tile] += RECRUIT_ARMIES
+			# Recruiting uses one of the recruits' two steps.
+			ready[tile] += RECRUIT_ARMIES
 			note = "recruited 2 armies."
 		"move":
 			# Movers with two steps go first; they arrive with one step left.
@@ -265,6 +300,10 @@ func _attack(source: Vector2i, target: Vector2i, sent: int) -> String:
 		"sent": sent, "target": target}
 	if won:
 		var survivors: int = preview["win_survivors"]
+		var escape: Vector2i = preview["retreat_tile"]
+		var retreating: int = preview["win_retreat"]
+		if escape != NO_TILE:
+			armies[escape] += retreating
 		owners[target] = active
 		armies[target] = survivors
 		ready[target] = 0
@@ -272,7 +311,12 @@ func _attack(source: Vector2i, target: Vector2i, sent: int) -> String:
 		if target == kingdoms[defender_side].capital:
 			winner = active
 			return "attacked (%s) and captured the enemy capital!" % dice
-		return "attacked (%s) and captured the tile. %d moved in." % [dice, survivors]
+		var aftermath := ""
+		if retreating > 0:
+			aftermath = " %d defenders retreated." % retreating
+		elif preview["win_retreat_lost"] > 0:
+			aftermath = " %d defenders were cut off and lost." % preview["win_retreat_lost"]
+		return "attacked (%s) and captured the tile. %d moved in.%s" % [dice, survivors, aftermath]
 	var lost: int = preview["lose_attacker_loss"]
 	armies[source] += sent - lost
 	armies[target] -= preview["lose_defender_loss"]
@@ -282,8 +326,8 @@ func _attack(source: Vector2i, target: Vector2i, sent: int) -> String:
 
 func _start_turn(side: int) -> void:
 	active = side
-	_improved_this_turn = false
-	_ai_actions = 0
+	improved_this_turn = false
+	ai_actions = 0
 	for tile: Vector2i in owners:
 		ready[tile] = armies[tile] if owners[tile] == side else 0
 		fresh[tile] = ready[tile]
@@ -323,10 +367,29 @@ func _record(message: String) -> void:
 		history.pop_front()
 
 
-# --- Computer player (works for whichever side is active) -------------------
+# --- Computer player ---------------------------------------------------------
+# The planning logic lives in game/ai/; personalities are data files there.
 
-const AI_MIN_CHANCE := 0.66
-const AI_CAPITAL_GARRISON := 2
+var ai_rng := RandomNumberGenerator.new()
+var ai_players: Array = [null, null]
+## Personality name per side, e.g. "Raider".
+var ai_styles: Array[String] = ["", ""]
+
+
+func set_ai_style(side: int, style_name: String) -> void:
+	var personality := AiPersonalities.by_name(style_name)
+	assert(personality != null, "Unknown AI personality " + style_name)
+	set_ai_personality(side, personality)
+
+
+## Accepts any personality, including blends made with blended_with().
+func set_ai_personality(side: int, personality: Resource) -> void:
+	ai_players[side] = AiPlayer.new(self, side, personality, ai_rng)
+	ai_styles[side] = personality.display_name
+
+
+func ai_personality(side: int) -> Resource:
+	return ai_players[side].personality
 
 
 func play_rival_turn() -> String:
@@ -342,7 +405,7 @@ func finish_rival_turn() -> String:
 		return ""
 	if active != RIVAL:
 		return "It is not the rival's turn."
-	if _ai_actions == 0:
+	if ai_actions == 0:
 		_record("Rival passed.")
 	return end_turn()
 
@@ -356,132 +419,13 @@ func play_ai_turn() -> bool:
 
 
 # Makes the active side's next computer move. Returns false when it is done.
-# Each call re-plans, so armies can move one step and then attack.
 func ai_step() -> bool:
 	if winner != NEUTRAL:
 		return false
-	var me := active
-	var choice := _ai_best_attack(me)
-	if choice.is_empty():
-		choice = _ai_next_move(me)
-	if choice.is_empty() and kingdoms[me].gold >= RECRUIT_COST:
-		choice = _ai_spend_step(me)
+	var choice: Dictionary = ai_players[active].next_action()
 	if choice.is_empty():
 		return false
-	_must(execute(choice["action"], choice["tile"], choice.get("to", NO_TILE), choice.get("count", 0)))
-	_ai_actions += 1
-	return true
-
-
-func _must(error: String) -> void:
+	var error := execute(choice["action"], choice["tile"], choice.get("to", NO_TILE), choice.get("count", 0))
 	assert(error.is_empty(), "AI chose an illegal action: " + error)
-
-
-func _ai_best_attack(me: int) -> Dictionary:
-	var enemy := 1 - me
-	var best := {}
-	var best_score := -INF
-	for source: Vector2i in owners:
-		if owners[source] != me or ready[source] == 0:
-			continue
-		for target in neighbors(source):
-			if owners[target] != enemy:
-				continue
-			# Keep one army behind if the source still borders other enemy land.
-			var keep := 0
-			for other in neighbors(source):
-				if other != target and owners[other] == enemy:
-					keep = 1
-			var count := mini(ready[source], armies[source] - keep)
-			if count < 1:
-				continue
-			var chance := win_chance(count, defense(target))
-			if chance < AI_MIN_CHANCE and not (is_capital(target) and chance >= 0.33 and round_number >= MAX_ROUNDS - 2):
-				continue
-			var score := chance * 10.0 - hex_distance(target, kingdoms[enemy].capital)
-			if is_capital(target):
-				score += 100.0
-			if score > best_score:
-				best_score = score
-				best = {"action": "attack", "tile": source, "to": target, "count": count}
-	return best
-
-
-func _front_distance(tile: Vector2i, enemy: int) -> int:
-	var best := 1000
-	for other: Vector2i in owners:
-		if owners[other] == enemy:
-			best = mini(best, hex_distance(tile, other))
-	return best
-
-
-func _ai_next_move(me: int) -> Dictionary:
-	var enemy := 1 - me
-	for source: Vector2i in owners:
-		if owners[source] != me or ready[source] == 0 or adjacent_to(source, enemy):
-			continue
-		var best_step := NO_TILE
-		var best_distance := _front_distance(source, enemy)
-		for step in neighbors(source):
-			if owners[step] == me and _front_distance(step, enemy) < best_distance:
-				best_distance = _front_distance(step, enemy)
-				best_step = step
-		# The capital always keeps a small garrison.
-		var count: int = ready[source]
-		if source == kingdoms[me].capital:
-			count = mini(count, armies[source] - AI_CAPITAL_GARRISON)
-		if best_step != NO_TILE and count > 0:
-			return {"action": "move", "tile": source, "to": best_step, "count": count}
-	return {}
-
-
-# Strongest enemy stack that could attack this tile next turn: armies have two
-# steps, so stacks up to two tiles away count.
-func _threat(tile: Vector2i, enemy: int) -> int:
-	var strongest := 0
-	for other: Vector2i in owners:
-		if owners[other] == enemy and hex_distance(tile, other) <= 2:
-			strongest = maxi(strongest, armies[other])
-	return strongest
-
-
-func _ai_spend_step(me: int) -> Dictionary:
-	var enemy := 1 - me
-	var claim := NO_TILE
-	var improve := NO_TILE
-	var defend := NO_TILE
-	var defend_need := -1000
-	var stage := NO_TILE
-	var stage_cost := 1000
-	for tile: Vector2i in owners:
-		if action_error("claim", tile).is_empty():
-			if claim == NO_TILE or hex_distance(tile, kingdoms[enemy].capital) < hex_distance(claim, kingdoms[enemy].capital):
-				claim = tile
-		if owners[tile] != me:
-			continue
-		if improve == NO_TILE and not improvements.has(tile) and not adjacent_to(tile, enemy):
-			improve = tile
-		var threat := _threat(tile, enemy)
-		var need := threat - defense(tile)
-		if (is_capital(tile) or threat >= 2) and need >= 0 and need + (5 if is_capital(tile) else 0) > defend_need:
-			defend_need = need + (5 if is_capital(tile) else 0)
-			defend = tile
-		for target in neighbors(tile):
-			if owners[target] == enemy:
-				var cost := defense(target) + 1 - armies[tile] - (3 if is_capital(target) else 0)
-				if cost < stage_cost:
-					stage_cost = cost
-					stage = tile
-	if armies[kingdoms[me].capital] < AI_CAPITAL_GARRISON:
-		return {"action": "recruit", "tile": kingdoms[me].capital}
-	if round_number % 3 == 0 and not _improved_this_turn and improve != NO_TILE:
-		return {"action": "improve", "tile": improve}
-	if defend != NO_TILE:
-		return {"action": "recruit", "tile": defend}
-	if claim != NO_TILE and (stage == NO_TILE or tile_count(me) <= tile_count(enemy) + 1):
-		return {"action": "claim", "tile": claim}
-	if stage != NO_TILE:
-		return {"action": "recruit", "tile": stage}
-	if claim != NO_TILE:
-		return {"action": "claim", "tile": claim}
-	return {"action": "recruit", "tile": kingdoms[me].capital}
+	ai_actions += 1
+	return true

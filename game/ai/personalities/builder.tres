@@ -1,0 +1,19 @@
+[gd_resource type="Resource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://game/ai/ai_personality.gd" id="1_personality"]
+
+[resource]
+script = ExtResource("1_personality")
+display_name = "Builder"
+description = "growing land and gold before attacking"
+min_chance = 0.8
+attack_from_round = 6
+capital_bonus = 15.0
+weak_target_bias = 0.5
+capital_garrison = 3
+defend_slack = 1
+improve_every = 1
+land_margin = 3
+claim_near_home = true
+capital_staging = 0
+noise = 2.0

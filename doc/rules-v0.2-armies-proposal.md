@@ -26,8 +26,8 @@ Everything else below is a proposal with suggested starting numbers.
 - Every owned tile shows an **army count**. Unclaimed land has none.
 - Start: **capital 3 armies**, each of the two other starting tiles **1 army**.
 - **Recruit:** 3 gold places **+2 armies on one owned tile you choose**.
-  Recruited armies defend immediately but **cannot move or attack until your
-  next turn**.
+  *Changed 2026-11-07:* recruiting uses one of the recruits' two steps, so
+  they can still **move once or attack** this turn.
 - Newly claimed land starts with **0 armies**. An undefended tile (no armies
   and not a capital) falls to any attack without a battle or dice.
 - There is no army upkeep and no limit per tile.
@@ -71,9 +71,12 @@ Typical chances (no capital bonus):
 
 - Each side loses armies equal to **half the other side's armies, rounded
   up**, but never more than it had.
-- **If the attacker wins:** remaining defenders are destroyed, the tile changes
-  owner, and the surviving attackers move in. A winning attack always keeps at
-  least 1 army. They are spent and cannot
+- **If the attacker wins:** the tile changes owner and the surviving attackers
+  move in (a winning attack always keeps at least 1 army). *Changed
+  2026-11-07:* the defenders lose half the attackers, rounded up, as in a
+  repelled attack; the **survivors retreat** to the adjacent friendly tile
+  closest to their capital (ties: the one with more armies). With no friendly
+  neighbour they are lost. The preview shows how many would retreat. They are spent and cannot
   attack again this turn (one capture per army per turn).
 - **If the attacker loses:** surviving attackers stay on their starting tile
   and are spent for this turn.
@@ -101,7 +104,35 @@ preview shows the win chance and the result for both outcomes.
   targets from the selected tile.
 - A short dice line in the recent moves, e.g. "6+1 vs 3+2: captured".
 
-## 6. Rival behaviour (Normal)
+## 6. Rival behaviour
+
+*Added 2026-11-07 (requested in conversation):* each match the rival gets a
+hidden **personality**, revealed on the result screen. How it is built and
+how to tweak it: [doc/ai.md](ai.md). All follow the same
+rules with no bonuses; they only weigh choices differently.
+
+| Personality | Plays like |
+|---|---|
+| Conqueror | Attacks at about 67% chance, strongly prefers the capital |
+| Builder | Claims land near home and improves every round; attacks from round 6 unless sure to win |
+| Raider | Attacks at 60%+, prefers weakly held tiles, mostly ignores the capital |
+| Guardian | Keeps 4 armies home, defends early, attacks only at 85%+ from round 4 |
+
+Each turn also has a **mood** (20% bolder, 20% more hesitant), and choices
+include a little randomness, so the same position is not always played the
+same way. In the last two rounds every personality grabs land and may try a
+long-shot capital attack. The rival uses its own random generator, separate
+from the dice.
+
+In tests against the same opponent: the Conqueror won 8 of 10 (all by capital,
+around round 9), the Raider 5 of 10, the Builder 1 and the Guardian 0, with
+longer matches. In AI-vs-AI over 20 seeds the first mover now wins 12, the
+second 7, with 1 draw.
+
+The common base plan below still applies, with the numbers set by the
+personality.
+
+### Base plan
 
 Same rules and information as the player, no bonuses. Each turn it:
 
@@ -133,6 +164,8 @@ Difficulty levels (Easy, Normal, Hard) come after v0.2 is playable.
 2. Newly claimed land starts with 0 armies.
 3. Capital defense bonus +2, with the 0-1-2 dice.
 4. Recruited armies defend at once but act only from the next turn.
-5. Defenders left on a captured tile are destroyed.
+   *Replaced 2026-11-07: recruits have one step left.*
+5. Defenders left on a captured tile are destroyed. *Replaced 2026-11-07 by
+   retreat (section 4).*
 6. The 20-round limit and land victory are unchanged.
 7. One capture per army per turn; no other attack limit.

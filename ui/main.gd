@@ -91,7 +91,7 @@ func _ready() -> void:
 		"Each turn, spend gold on as many actions as you can afford:",
 		"CLAIM: 3 gold. Unclaimed land next to yours. It starts with no armies.",
 		"IMPROVE: 3 gold. +1 gold per round. Once per tile.",
-		"RECRUIT: 3 gold. +2 armies on a tile you choose. They defend at once but can act only from your next turn.",
+		"RECRUIT: 3 gold. +2 armies on a tile you choose. Recruiting uses one of their 2 steps, so they can still move or attack once this turn.",
 		"",
 		"ARMIES: each army has 2 steps per turn. Moving one tile uses 1 step; attacking uses all that are left.",
 		"So an army can move twice, move then attack, or just attack. Winners stop on the captured tile.",
@@ -100,9 +100,11 @@ func _ready() -> void:
 		"  enemy tile -> Attack with the armies you choose to send.",
 		"",
 		"BATTLE: armies sent + a roll of 0-2 against defenders (+2 on a capital) + a roll of 0-2. The attacker must be higher; ties go to the defender. A tile with no defenders falls without a battle.",
-		"Each side loses half the other side's armies (rounded up). Winners move in and stop for the turn; a winning attack always keeps at least 1 army. Defenders on a captured tile are destroyed.",
+		"Each side loses half the other side's armies (rounded up). Winners move in and stop for the turn; a winning attack always keeps at least 1 army. On a captured tile, the defenders lose half the attackers (rounded up); survivors retreat to the neighbouring friendly tile closest to their capital, or are lost if there is none.",
 		"",
 		"After both kingdoms play: income = 2 + owned tiles + improvements.",
+		"",
+		"RIVAL: each match it has a hidden personality (Conqueror, Builder, Raider or Guardian) and its moods vary from turn to turn. It follows the same rules as you, with no bonuses. Its personality is revealed when the match ends.",
 	])
 	board.game = game
 	_refresh()
@@ -394,10 +396,16 @@ func _refresh_target(reasons: Array[String]) -> void:
 	if defenders == 0 and not game.is_capital(target):
 		preview.text = "Undefended: captured without a battle. %d %s move in." % [send_count, "army" if send_count == 1 else "armies"]
 	else:
+		var aftermath := ""
+		if game.is_capital(target):
+			aftermath = " and you win the game"
+		elif result["win_retreat"] > 0:
+			aftermath = "; %d of theirs retreat" % result["win_retreat"]
+		elif result["win_retreat_lost"] > 0:
+			aftermath = "; %d of theirs are cut off and lost" % result["win_retreat_lost"]
 		preview.text = "Defenders %d%s.\nWin: %d of your armies move in%s.\nLose: you lose %d, they lose %d." % [
 			defenders, " +2 capital" if game.is_capital(target) else "", result["win_survivors"],
-			" and you win the game" if game.is_capital(target) else "",
-			result["lose_attacker_loss"], result["lose_defender_loss"]]
+			aftermath, result["lose_attacker_loss"], result["lose_defender_loss"]]
 	if not error.is_empty():
 		reasons.append(error)
 
@@ -471,5 +479,7 @@ func _show_result() -> void:
 		result_title.text = "Victory! The rival capital is yours." if by_capital else "Victory! You hold the most land."
 	else:
 		result_title.text = "Defeat. Your capital has fallen." if by_capital else "Defeat. The rival holds more land."
-	result_detail.text = "Round %d. Land: you %d, rival %d." % [game.round_number, game.tile_count(0), game.tile_count(1)]
+	var rival := game.ai_personality(EmpireGame.RIVAL)
+	result_detail.text = "Round %d. Land: you %d, rival %d.\nThe rival was a %s: %s." % [game.round_number,
+		game.tile_count(0), game.tile_count(1), rival.display_name, rival.description]
 	status.text = result_title.text

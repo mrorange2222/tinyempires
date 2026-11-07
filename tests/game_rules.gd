@@ -13,6 +13,7 @@ func _initialize() -> void:
 	_invalid_actions()
 	_turns_and_limit()
 	_ai()
+	_personalities()
 	if failures == 0:
 		print("PASS: ", checks, " rule checks (tile armies, dice, AI, full matches)")
 	else:
@@ -64,12 +65,23 @@ func _setup_and_economy() -> void:
 	rejected(game, "improve", Vector2i(2, 2))
 	game.kingdoms[0].gold = 9
 	check(game.execute("recruit", Vector2i(2, 2)).is_empty() and game.execute("recruit", Vector2i(2, 2)).is_empty(), "Recruit repeatedly")
-	check(game.armies[Vector2i(2, 2)] == 4 and game.ready[Vector2i(2, 2)] == 0 and game.kingdoms[0].gold == 3, "Recruits +2 each, not ready")
-	rejected(game, "move", Vector2i(2, 2), cap, 1)
+	check(game.armies[Vector2i(2, 2)] == 4 and game.ready[Vector2i(2, 2)] == 4 and game.fresh[Vector2i(2, 2)] == 0
+			and game.kingdoms[0].gold == 3, "Recruits +2 each, with one step left")
 	check(game.defense(Vector2i(2, 2)) == 4 and game.defense(cap) == 5, "Recruits defend at once; capital +2")
+	check(game.execute("move", Vector2i(2, 2), Vector2i(3, 2), 2).is_empty(), "Recruit then move")
+	check(game.ready[Vector2i(3, 2)] == 1 and game.ready[Vector2i(2, 2)] == 2, "Moved recruits have no steps left")
+	rejected(game, "move", Vector2i(3, 2), Vector2i(2, 2), 2)
+	game.owners[Vector2i(2, 3)] = 1
+	game.armies[Vector2i(2, 3)] = 0
+	check(game.execute("attack", Vector2i(2, 2), Vector2i(2, 3), 2).is_empty(), "Recruit then attack")
+	check(game.owners[Vector2i(2, 3)] == 0, "Recruits captured the tile")
+	game.owners[Vector2i(2, 3)] = -1
+	game.armies[Vector2i(2, 3)] = 0
+	game.ready[Vector2i(2, 3)] = 0
 	game.end_turn()
 	game.end_turn()
-	check(game.ready[Vector2i(2, 2)] == 4, "Recruits are ready next turn")
+	check(game.ready[Vector2i(2, 2)] == game.armies[Vector2i(2, 2)] and game.fresh[Vector2i(2, 2)] == game.armies[Vector2i(2, 2)],
+			"Next turn all armies have two steps")
 	check(game.kingdoms[0].gold == 3 + 7, "Income paid after the round")
 
 
@@ -144,6 +156,41 @@ func _combat() -> void:
 	check(game.armies[Vector2i(3, 2)] == 0 and game.improvements.has(target), "Attackers left source; improvement kept")
 	check(game.last_battle["won"] and game.history.back().contains("6+0 vs 3+2"), "Dice shown in history")
 	rejected(game, "attack", target, Vector2i(3, 4), 1)
+	check(game.history.back().contains("cut off") == false, "No retreat message when no defenders survive")
+	# Survivors of a captured tile withdraw toward their capital.
+	game = Game.new(13)
+	var front := Vector2i(3, 3)
+	game.owners[front] = 1
+	game.armies[front] = 5
+	for behind in [Vector2i(2, 4), Vector2i(3, 4)]:
+		game.owners[behind] = 1
+		game.armies[behind] = 1
+	game.armies[Vector2i(3, 2)] = 8
+	game.ready[Vector2i(3, 2)] = 8
+	game.fresh[Vector2i(3, 2)] = 8
+	var preview_retreat := game.battle_preview(front, 8)
+	var expected_escape := game.retreat_tile(front)
+	check(expected_escape in [Vector2i(2, 4), Vector2i(3, 4)], "Retreat goes to a friendly neighbour")
+	check(game.hex_distance(expected_escape, game.kingdoms[1].capital) <= game.hex_distance(Vector2i(2, 4), game.kingdoms[1].capital)
+			and game.hex_distance(expected_escape, game.kingdoms[1].capital) <= game.hex_distance(Vector2i(3, 4), game.kingdoms[1].capital),
+			"Retreat goes toward the capital")
+	check(preview_retreat["win_retreat"] == 1 and preview_retreat["win_survivors"] == 5, "Preview: 8 vs 5, 1 retreats, 5 move in")
+	game.forced_rolls = [2, 0]
+	check(game.execute("attack", Vector2i(3, 2), front, 8).is_empty(), "Attack with survivors left")
+	check(game.owners[front] == 0 and game.armies[front] == 5, "Attackers take the tile")
+	check(game.armies[expected_escape] == 2 and game.history.back().contains("1 defenders retreated"), "1 defender retreated")
+	game = Game.new(14)
+	game.owners[front] = 1
+	game.armies[front] = 5
+	game.armies[Vector2i(3, 2)] = 8
+	game.ready[Vector2i(3, 2)] = 8
+	game.fresh[Vector2i(3, 2)] = 8
+	game.forced_rolls = [2, 0]
+	check(game.retreat_tile(front) == Game.NO_TILE and game.battle_preview(front, 8)["win_retreat_lost"] == 1, "No escape route in preview")
+	var rival_before := game.total_armies(1)
+	check(game.execute("attack", Vector2i(3, 2), front, 8).is_empty() and game.total_armies(1) == rival_before - 5,
+			"Without a friendly neighbour the survivors are lost")
+	check(game.history.back().contains("cut off"), "Cut-off defenders reported")
 	game = _battle(4, 3, [2, 0])
 	check(game.owners[Vector2i(3, 3)] == 0 and game.armies[Vector2i(3, 3)] == 1, "Underdog win keeps at least 1 army")
 	game = _battle(4, 3, [1, 0])
@@ -212,10 +259,36 @@ func _turns_and_limit() -> void:
 
 func _ai() -> void:
 	var game := Game.new(8)
+	game.set_ai_style(1, "Conqueror")
 	game.end_turn()
 	check(game.play_rival_turn().is_empty() and consistent(game), "Rival opening turn is legal")
 	check(game.tile_count(1) == 5 and game.kingdoms[1].gold == 0 + game.income(1), "Rival spends its 6 gold on two claims")
 	check(game.active == 0 and game.round_number == 2, "Control returns to the player")
+	# Personalities: every match picks one, and they play differently.
+	var styles := {}
+	for seed_value in range(40):
+		styles[Game.new(seed_value).ai_styles[1]] = true
+	check(styles.size() == Game.AiPersonalities.names().size(), "All rival personalities occur")
+	for style_name in ["Builder", "Conqueror"]:
+		game = Game.new(15)
+		game.set_ai_style(1, style_name)
+		game.round_number = 2
+		game.end_turn()
+		game.owners[Vector2i(3, 3)] = 1
+		game.armies[Vector2i(3, 3)] = 2
+		game.ready[Vector2i(3, 3)] = 2
+		game.fresh[Vector2i(3, 3)] = 2
+		game.ai_players[1].mood = 0.0
+		var attack: Dictionary = game.ai_players[1]._plan_attack()
+		if style_name == "Builder":
+			check(attack.is_empty(), "Builder holds off a 67% attack early on")
+		else:
+			check(not attack.is_empty() and attack["to"] == Vector2i(3, 2), "Conqueror takes a 67% attack")
+	game = Game.new(16)
+	game.set_ai_style(1, "Guardian")
+	game.end_turn()
+	game.play_rival_turn()
+	check(game.armies[game.kingdoms[1].capital] >= 4, "Guardian keeps a 4-army capital garrison")
 	game = Game.new(12)
 	game.end_turn()
 	var steps := 0
@@ -246,7 +319,7 @@ func _ai() -> void:
 	for i in range(4):
 		game.end_turn()
 		game.play_rival_turn()
-	check(game.armies[game.kingdoms[1].capital] >= Game.AI_CAPITAL_GARRISON, "Rival keeps a capital garrison")
+	check(game.armies[game.kingdoms[1].capital] >= game.ai_personality(1).capital_garrison, "Rival keeps its capital garrison")
 	var results := {0: 0, 1: 0, 2: 0}
 	var passive_losses := 0
 	var longest := 0
@@ -277,3 +350,31 @@ func _ai() -> void:
 	check(longest <= Game.MAX_ROUNDS, "Every match ends by round 20")
 	check(results[0] > 0, "The rival is beatable by the same strategy")
 	check(passive_losses == 20, "A passive player always loses")
+
+
+func _personalities() -> void:
+	var registry := Game.AiPersonalities
+	check(registry.names() == ["Conqueror", "Builder", "Raider", "Guardian"], "Built-in personalities load from data files")
+	for personality in registry.ALL:
+		check(not personality.description.is_empty(), "Personality has a description: " + personality.display_name)
+	var raider: Resource = registry.by_name("Raider")
+	var builder: Resource = registry.by_name("Builder")
+	var mix: Resource = raider.blended_with(builder, 0.3)
+	check(mix.display_name == "Raider-Builder" and mix.description.contains("Raider"), "Blend gets a name and description")
+	check(is_equal_approx(mix.min_chance, 0.66) and is_equal_approx(mix.capital_bonus, 8.0), "Blend interpolates numbers")
+	check(mix.land_margin == 2 and mix.attack_from_round == 3 and mix.capital_garrison == 2, "Blend rounds whole numbers")
+	check(mix.claim_near_home == false and raider.blended_with(builder, 0.7).claim_near_home == true,
+			"On/off settings follow the heavier side")
+	check(is_equal_approx(raider.min_chance, 0.6) and builder.land_margin == 3, "Blending leaves the originals unchanged")
+	var game := Game.new(77)
+	game.set_ai_personality(1, mix)
+	check(game.ai_styles[1] == "Raider-Builder" and game.ai_personality(1) == mix, "A blend can play as the rival")
+	var safety := 0
+	while game.winner == -1 and safety < 50:
+		safety += 1
+		game.play_ai_turn()
+		if game.winner == -1:
+			game.end_turn()
+			game.play_rival_turn()
+		check(consistent(game), "Blended rival plays legally")
+	check(game.winner != -1, "Match with a blended rival finishes")

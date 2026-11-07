@@ -142,8 +142,9 @@ func _run() -> void:
 				"Distant land explains why it cannot be claimed")
 		await _tile(main, Vector2i(2, 2))
 		await _press(main, main.recruit_button)
-		check(game.armies[Vector2i(2, 2)] == 2 and game.ready[Vector2i(2, 2)] == 0 and game.kingdoms[0].gold == 0,
-				"Recruit places 2 armies that cannot act yet")
+		check(game.armies[Vector2i(2, 2)] == 2 and game.ready[Vector2i(2, 2)] == 2 and game.fresh[Vector2i(2, 2)] == 0
+				and game.kingdoms[0].gold == 0, "Recruit places 2 armies with one step left")
+		check(main.tile_detail.text.contains("2 can act: 0 with 2 steps, 2 with 1"), "Recruits shown with one step")
 		check(main.recruit_button.disabled and main.preview.text.contains("Need 3 gold"), "Out of gold explained")
 
 		# Attack with fixed dice.
@@ -154,6 +155,8 @@ func _run() -> void:
 		game.armies[Vector2i(3, 2)] = 3
 		game.ready[Vector2i(3, 2)] = 3
 		await _tile(main, Vector2i(3, 2))
+		await _tile(main, Vector2i(3, 2))
+		check(main.source == Vector2i(3, 2), "Second click selects the targeted tile")
 		await _tile(main, enemy)
 		check(main.attack_button.visible and main.attack_button.text.contains("Attack with 3")
 				and main.attack_button.text.contains("67%"), "Attack shows count and chance")
@@ -164,6 +167,25 @@ func _run() -> void:
 		await _press(main, main.attack_button)
 		check(game.owners[enemy] == 0 and game.armies[enemy] == 2 and main.history_label.text.contains("3+0 vs 2+0"),
 				"Attack resolves with dice in history")
+		var front := Vector2i(4, 3)
+		game.owners[front] = 1
+		game.armies[front] = 5
+		game.owners[Vector2i(4, 4)] = 1
+		game.armies[enemy] = 8
+		game.ready[enemy] = 8
+		main._select(enemy, front)
+		main.send_count = 8
+		main._refresh()
+		check(main.preview.text.contains("1 of theirs retreat"), "Preview shows defenders that would retreat")
+		game.owners[Vector2i(4, 4)] = -1
+		main._refresh()
+		check(main.preview.text.contains("1 of theirs are cut off and lost"), "Preview shows cut-off defenders")
+		game.owners[front] = -1
+		game.armies[front] = 0
+		game.armies[enemy] = 2
+		game.ready[enemy] = 0
+		main._select(Game.NO_TILE, Game.NO_TILE)
+		main._refresh()
 		game.owners[Vector2i(4, 2)] = 1
 		game.armies[Vector2i(4, 2)] = 9
 		game.armies[Vector2i(3, 2)] = 1
@@ -198,6 +220,8 @@ func _run() -> void:
 				check(game.execute("attack", staging, capital, 9).is_empty(), "Rival capital capture fixture")
 				main._refresh()
 			check(main.result_overlay.visible and game.winner == winner, "Victory/defeat screen")
+			check(main.result_detail.text.contains("The rival was") and main.result_detail.text.contains(game.ai_styles[1]),
+					"Result reveals the rival's personality")
 			check(main.end_button.disabled, "Game over disables End turn")
 			await _click(main.get_node("Result/Center/Card/Content/Restart"))
 			check(not main.result_overlay.visible and main.game.winner == -1 and main.source == Game.NO_TILE,
