@@ -105,7 +105,7 @@ text = "RIVAL"
 [node name="Instructions" type="Label" parent="Margin/Layout"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 13
-text = "Click your tile, then a neighbouring tile to move, attack or claim. Numbers are armies; a bright dot means armies can still act."
+text = "Click your tile, then a neighbouring tile to move, attack or claim. Soldiers show armies (the tag gives the exact number); a bright dot means they can still act; grey soldiers are done for this turn."
 autowrap_mode = 2
 
 [node name="PlayArea" type="HBoxContainer" parent="Margin/Layout"]

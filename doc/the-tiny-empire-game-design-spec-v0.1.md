@@ -66,7 +66,8 @@ These experimental rules supersede the earlier resource/building proposals.
 
 - One player (blue) and one rival (coral) on the current fixed island.
 - Each starts with a capital and two adjacent owned tiles, 6 gold, and 3 army strength.
-- Player capital: axial (3, 1); rival capital: (2, 7).
+- Player capital: axial (3, 1); rival capital: (2, 7). The view is turned
+  180 degrees (2026-11-07) so the player starts at the bottom of the screen.
 - The entire map is visible. All land is plains with identical gameplay effects.
 - Gold is the only resource. No food, wood, stone, population, or upkeep.
 - Army strength is kingdom-wide and applies at every border; no individual units.
@@ -217,7 +218,8 @@ Change the numbers or rules based on play, not to grow the feature list.
 - Simple and elegant, not realistic. Flat vector shapes drawn in code.
 - Fonts: Cinzel (titles), Nunito (text), SIL OFL 1.1.
 - Decorative terrain (groves, hills, meadows) is cosmetic and must never imply
-  a rule. It is drawn under badges, crowns and hints so it never hides them.
+  a rule. It is drawn under soldiers, tags, crowns and hints so it never hides them.
+- Armies: stylised helmeted soldiers (one per army, at most three) with a number tag.
 - Top bar: kingdom cards with coin, shield and hex icons.
 - Sidebar: cards for the selection, your kingdom, and recent moves.
 

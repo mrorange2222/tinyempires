@@ -5,7 +5,10 @@ signal tile_selected(coordinates: Vector2i, terrain: String)
 const IslandMap = preload("res://map/island_map.gd")
 const EmpireGame = preload("res://game/empire_game.gd")
 const KINGDOM_COLORS: Array[Color] = [Color("#79c8df"), Color("#e8a08d")]
+# Polygon edge facing each neighbour direction (see IslandMap.DIRECTIONS).
 const EDGE_INDICES: Array[int] = [0, 5, 4, 3, 2, 1]
+# The view is turned 180 degrees so the player's kingdom starts at the bottom.
+const FLIPPED := true
 const PADDING := 18.0
 const TILT := 0.58
 const LAND_HEIGHT := 0.22
@@ -105,9 +108,25 @@ func _map_bounds() -> Rect2:
 	return Rect2(bounds.position - margin, bounds.size + margin * 2.0)
 
 
+## Tiles from back (top of the screen) to front, for drawing and picking.
+func draw_order() -> Array[Vector2i]:
+	var order: Array[Vector2i] = []
+	order.assign(tiles.keys())
+	order.sort_custom(func(a: Vector2i, b: Vector2i) -> bool:
+		var ya := _raw_center(a).y * (-1.0 if FLIPPED else 1.0)
+		var yb := _raw_center(b).y * (-1.0 if FLIPPED else 1.0)
+		if not is_equal_approx(ya, yb):
+			return ya < yb
+		return _raw_center(a).x < _raw_center(b).x)
+	return order
+
+
 func tile_center(coordinates: Vector2i) -> Vector2:
 	var radius := hex_radius
-	var projected := (_raw_center(coordinates) - _land_bounds.get_center()) * Vector2(1.0, TILT)
+	var offset := _raw_center(coordinates) - _land_bounds.get_center()
+	if FLIPPED:
+		offset = -offset
+	var projected := offset * Vector2(1.0, TILT)
 	var elevation := LAND_HEIGHT if tiles[coordinates] != "Water" else 0.0
 	return size / 2.0 + (projected + Vector2(0.0, LAND_HEIGHT / 2.0 - elevation)) * radius
 
@@ -160,7 +179,7 @@ func _draw_surface(coordinates: Vector2i) -> void:
 		for index in range(IslandMap.DIRECTIONS.size()):
 			var neighbor := coordinates + IslandMap.DIRECTIONS[index]
 			if game.owners.get(neighbor, EmpireGame.NEUTRAL) != owner:
-				var edge := EDGE_INDICES[index]
+				var edge := (EDGE_INDICES[index] + (3 if FLIPPED else 0)) % 6
 				draw_line(polygon[edge], polygon[edge + 1], color, 2.5, true)
 	_draw_decor(coordinates)
 
@@ -256,8 +275,8 @@ func _draw() -> void:
 			for index in range(shadow.size()):
 				shadow[index] += (Vector2(0.0, LAND_HEIGHT) + SHADOW_OFFSET) * radius
 			draw_colored_polygon(shadow, Color(0.02, 0.06, 0.09, 0.22))
-	# Rows are stored back-to-front, so nearer land covers the sides behind it.
-	for coordinates: Vector2i in tiles:
+	# Back-to-front, so nearer land covers the sides behind it.
+	for coordinates: Vector2i in draw_order():
 		if tiles[coordinates] == "Water":
 			continue
 		var faces := tile_faces(coordinates)
@@ -292,7 +311,7 @@ func clear_selection() -> void:
 
 func pick_land(point: Vector2) -> Variant:
 	# Front rows are checked first: raised land hides the tiles behind it.
-	var coordinates_in_front := tiles.keys()
+	var coordinates_in_front := draw_order()
 	coordinates_in_front.reverse()
 	for coordinates: Vector2i in coordinates_in_front:
 		if tiles[coordinates] == "Water":
@@ -308,47 +327,114 @@ func pick_land(point: Vector2) -> Variant:
 func _draw_markers() -> void:
 	if game == null:
 		return
-	var font := get_theme_default_font()
 	var scale_factor := hex_radius / MAX_HEX_RADIUS
-	for coordinates: Vector2i in game.owners:
-		var owner: int = game.owners[coordinates]
+	# Back to front, so nearer soldiers overlap the ones behind them.
+	for coordinates: Vector2i in draw_order():
+		var owner: int = game.owners.get(coordinates, EmpireGame.NEUTRAL)
 		if owner == EmpireGame.NEUTRAL:
 			continue
 		var center := tile_center(coordinates)
 		var color := KINGDOM_COLORS[owner]
-		if game.is_capital(coordinates):
-			var crown_center := center + Vector2(0, -20) * scale_factor
-			var s := scale_factor * 0.8
-			var crown := PackedVector2Array([
-				crown_center + Vector2(-11, -7) * s, crown_center + Vector2(-6, -2) * s,
-				crown_center + Vector2(0, -11) * s, crown_center + Vector2(6, -2) * s,
-				crown_center + Vector2(11, -7) * s, crown_center + Vector2(8, 7) * s,
-				crown_center + Vector2(-8, 7) * s,
-			])
-			draw_colored_polygon(crown, color)
 		if game.improvements.has(coordinates):
-			var origin := center + Vector2(30, -4) * scale_factor
+			var origin := center + Vector2(32, -12) * scale_factor
 			for index in range(3):
 				var offset := origin + Vector2((index - 1) * 6, (index - 1) * 2) * scale_factor
 				draw_line(offset + Vector2(-3, 4) * scale_factor, offset + Vector2(3, -4) * scale_factor,
 						Color("#ead198"), 2.5, true)
-		# Army badge: number of armies; a bright dot means some can still act.
-		var badge := center + Vector2(0, 6) * scale_factor
-		var badge_radius := 13.0 * scale_factor + 2.0
-		# Empty tiles get a quieter badge so occupied ones stand out.
-		var empty: bool = game.armies[coordinates] == 0
-		if empty:
-			badge_radius *= 0.75
-		draw_circle(badge + Vector2(0, 2), badge_radius, Color(0.02, 0.06, 0.08, 0.35))
-		draw_circle(badge, badge_radius, Color("#1d3338", 0.6 if empty else 1.0))
-		draw_arc(badge, badge_radius, 0, TAU, 32, Color(color, 0.5 if empty else 1.0), 2.0, true)
-		var text := str(game.armies[coordinates])
-		var font_size := int(round((11 if empty else 15) * scale_factor + 2))
-		var text_size := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size)
-		draw_string(font, badge + Vector2(-text_size.x / 2.0, font_size * 0.36), text,
-				HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, Color("#f1f4ee", 0.55 if empty else 1.0))
-		if owner == game.active and owner == EmpireGame.PLAYER and game.ready[coordinates] > 0:
-			draw_circle(badge + Vector2(badge_radius * 0.75, -badge_radius * 0.75), 3.5, Color("#fff2b8"))
+		var count: int = game.armies[coordinates]
+		if count > 0:
+			var can_act: bool = owner == game.active and game.ready[coordinates] > 0
+			var spent: bool = owner == game.active and not can_act
+			_draw_army(center, color, count, spent, scale_factor)
+			_draw_army_tag(center + Vector2(19, 13) * scale_factor, color, count, spent,
+					can_act and owner == EmpireGame.PLAYER, scale_factor)
+		# The crown goes on top so soldiers never hide it.
+		if game.is_capital(coordinates):
+			_draw_crown(center + Vector2(-33, -20) * scale_factor, color, scale_factor)
+
+
+## Where soldiers stand for 1, 2 or 3 figures (offsets from the tile centre).
+const SOLDIER_SPOTS: Array = [
+	[Vector2(0, 10)],
+	[Vector2(-9, 4), Vector2(9, 12)],
+	[Vector2(-15, 3), Vector2(13, 5), Vector2(-1, 15)],
+]
+
+
+## Soldiers standing on a tile: one per army, at most three (the tag shows the total).
+func _draw_army(center: Vector2, color: Color, count: int, spent: bool, s: float) -> void:
+	var figures := mini(count, 3)
+	var tint := color.lerp(Color("#7a8584"), 0.6) if spent else color
+	for spot: Vector2 in SOLDIER_SPOTS[figures - 1]:
+		_draw_soldier(center + spot * s * 0.85, tint, spent, s * 0.9)
+
+
+## One stylised soldier: helmet with a plume, tunic, round shield and spear.
+func _draw_soldier(feet: Vector2, color: Color, spent: bool, s: float) -> void:
+	var ink := Color(0.07, 0.1, 0.12, 0.9)
+	var steel := Color("#c3cbcc") if not spent else Color("#8f9898")
+	var steel_dark := steel.darkened(0.35)
+	var skin := Color("#e9c7a3") if not spent else Color("#b9a796")
+	_draw_ellipse(feet + Vector2(1, 0), Vector2(10, 3.5) * s, Color(0, 0, 0, 0.3))
+	# Spear behind the body.
+	draw_line(feet + Vector2(8, 1) * s, feet + Vector2(8, -40) * s, Color("#6b4f33"), 2.0 * s, true)
+	draw_colored_polygon(PackedVector2Array([feet + Vector2(8, -46) * s, feet + Vector2(10.5, -39) * s,
+		feet + Vector2(5.5, -39) * s]), steel)
+	# Legs.
+	draw_line(feet + Vector2(-3, -9) * s, feet + Vector2(-3, 0) * s, Color("#2b3236"), 3.0 * s, true)
+	draw_line(feet + Vector2(3, -9) * s, feet + Vector2(3, 0) * s, Color("#2b3236"), 3.0 * s, true)
+	# Tunic, slightly flared, with a belt.
+	var tunic := PackedVector2Array([feet + Vector2(-7.5, -8) * s, feet + Vector2(7.5, -8) * s,
+		feet + Vector2(5.5, -23) * s, feet + Vector2(-5.5, -23) * s])
+	draw_colored_polygon(tunic, color)
+	draw_line(feet + Vector2(-6.8, -13) * s, feet + Vector2(6.8, -13) * s, color.darkened(0.35), 1.6 * s, true)
+	tunic.append(tunic[0])
+	draw_polyline(tunic, ink, 1.0, true)
+	# Hand on the spear.
+	draw_circle(feet + Vector2(8, -18) * s, 1.8 * s, skin)
+	# Head.
+	draw_circle(feet + Vector2(0, -27.5) * s, 4.4 * s, skin)
+	# Helmet: rounded dome with a brim, nose guard and a plume in kingdom colour.
+	var dome := PackedVector2Array()
+	for step in range(13):
+		var angle := PI + PI * step / 12.0
+		dome.append(feet + Vector2(cos(angle) * 5.6, -28.5 + sin(angle) * 5.6) * s)
+	draw_colored_polygon(dome, steel)
+	draw_line(feet + Vector2(-6.6, -28.3) * s, feet + Vector2(6.6, -28.3) * s, steel_dark, 1.8 * s, true)
+	draw_line(feet + Vector2(0, -28.3) * s, feet + Vector2(0, -25.2) * s, steel_dark, 1.2 * s, true)
+	draw_circle(feet + Vector2(-2, -31.5) * s, 1.2 * s, Color(1, 1, 1, 0.55))
+	_draw_ellipse(feet + Vector2(0, -35.5) * s, Vector2(2.2, 3.2) * s, color.lightened(0.15))
+	# Round shield in front, kingdom colour with a steel rim and boss.
+	var shield := feet + Vector2(-6.5, -15) * s
+	draw_circle(shield, 6.2 * s, color.darkened(0.15))
+	draw_arc(shield, 6.2 * s, 0, TAU, 20, steel, 1.6 * s, true)
+	draw_circle(shield, 1.6 * s, steel)
+
+
+## Small tag with the exact army count; a bright dot means armies can still act.
+func _draw_army_tag(at: Vector2, color: Color, count: int, spent: bool, can_act: bool, s: float) -> void:
+	var font := get_theme_default_font()
+	var radius := 10.0 * s + 1.5
+	draw_circle(at + Vector2(0, 1.5), radius, Color(0.02, 0.06, 0.08, 0.35))
+	draw_circle(at, radius, Color("#1d3338"))
+	draw_arc(at, radius, 0, TAU, 28, color if not spent else Color(color, 0.5), 1.8, true)
+	var text := str(count)
+	var font_size := int(round(12 * s + 2))
+	var text_size := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size)
+	draw_string(font, at + Vector2(-text_size.x / 2.0, font_size * 0.36), text, HORIZONTAL_ALIGNMENT_LEFT, -1,
+			font_size, Color("#f1f4ee", 0.6 if spent else 1.0))
+	if can_act:
+		draw_circle(at + Vector2(radius * 0.8, -radius * 0.8), 3.2, Color("#fff2b8"))
+
+
+func _draw_crown(at: Vector2, color: Color, s: float) -> void:
+	draw_circle(at, 10.5 * s, Color("#1d3338", 0.85))
+	var k := s * 0.75
+	var crown := PackedVector2Array([
+		at + Vector2(-9, -3) * k, at + Vector2(-5, 1) * k, at + Vector2(0, -7) * k,
+		at + Vector2(5, 1) * k, at + Vector2(9, -3) * k, at + Vector2(7, 6) * k, at + Vector2(-7, 6) * k,
+	])
+	draw_colored_polygon(crown, color)
 
 
 # Hints only appear where the player can act right now.
@@ -360,7 +446,7 @@ func _draw_hints() -> void:
 		return
 	var from_own: bool = has_selection and game.owners.get(selected_coordinates, -1) == EmpireGame.PLAYER
 	for coordinates: Vector2i in game.owners:
-		var center := tile_center(coordinates) + Vector2(0, -24) * (hex_radius / MAX_HEX_RADIUS)
+		var center := tile_center(coordinates) + Vector2(0, -46) * (hex_radius / MAX_HEX_RADIUS)
 		if game.action_error("claim", coordinates).is_empty() \
 				and (not from_own or game.are_adjacent(selected_coordinates, coordinates)):
 			draw_circle(tile_center(coordinates), 5.0, Color(0.95, 0.87, 0.6, 0.9))
@@ -381,7 +467,7 @@ func _draw_rival_changes() -> void:
 		var marked := tile_polygon(coordinates)
 		marked.append(marked[0])
 		draw_polyline(marked, Color(1.0, 0.85, 0.8, 0.7), 2.0, true)
-		var dot := tile_center(coordinates) + Vector2(-30, -4) * (hex_radius / MAX_HEX_RADIUS)
+		var dot := tile_center(coordinates) + Vector2(-32, 6) * (hex_radius / MAX_HEX_RADIUS)
 		draw_circle(dot, 6.0, Color("#ffffff"))
 		draw_circle(dot, 4.5, Color("#ff8f73"))
 	if not game.rival_changes.is_empty():

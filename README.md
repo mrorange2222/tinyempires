@@ -7,13 +7,15 @@ with Linux and Windows as desktop targets. Mobile is deferred.
 
 [Issue #2: Rules v0.2, armies on tiles](https://github.com/mrorange2222/tinyempires/issues/2),
 following [issue #1](https://github.com/mrorange2222/tinyempires/issues/1).
-One player (blue) against one computer rival (coral) on a 35-tile island.
+One player (blue, starting at the bottom) against one computer rival (coral,
+at the top) on a 35-tile island.
 Full rules: [Rules v0.2](doc/rules-v0.2-armies-proposal.md).
 
 ### Play
 
 - Each kingdom starts with 6 gold, 3 tiles, and armies on them: capital 3,
-  the two other tiles 1 each. Numbers on tiles are armies.
+  the two other tiles 1 each. Armies are shown as little soldiers (one per army,
+  at most three) with a tag giving the exact number.
 - **Click one of your tiles.** The panel offers **Recruit +2 armies here**
   (3 gold) and **Improve** (3 gold, +1 gold per round, once per tile).
 - **Then click a neighbouring tile** to target it (white outline and arrow):
@@ -24,7 +26,7 @@ Full rules: [Rules v0.2](doc/rules-v0.2-armies-proposal.md).
   Click a target a second time to select it instead.
 - Each army has **2 steps** per turn: move twice, move then attack, or just
   attack (attacking ends its turn). The panel shows how many armies can act
-  and how many steps they have. A bright dot on a badge means armies there
+  and how many steps they have. A bright dot on the tag means armies there
   can still act. Recruiting uses one of the recruits' steps, so they can move
   or attack once right away. Gold actions are unlimited while you have gold.
 - **Battle:** armies sent + a 0-2 roll against defenders (+2 on a capital)
@@ -113,7 +115,7 @@ These checks validate implementation, not game balance or fun.
 - `project.godot`: engine configuration and main-scene selection.
 - `scenes/main.tscn`: the desktop map layout.
 - `map/island_map.gd`: fixed terrain data and hex-neighbor directions.
-- `ui/hex_board.gd`: hex rendering, decorative terrain, army badges, and pointer selection.
+- `ui/hex_board.gd`: hex rendering, decorative terrain, soldier army tokens, and pointer selection.
 - `ui/water.gdshader`: static water depth colors, surface detail, and shoreline.
 - `ui/icon.gd`: small vector icons (coin, shield, hex, crown).
 - `assets/fonts/`: Cinzel and Nunito fonts with their OFL licences.

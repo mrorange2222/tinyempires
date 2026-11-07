@@ -303,7 +303,7 @@ func _refresh() -> void:
 			count_row, move_button, attack_button]:
 		control.hide()
 	var reasons: Array[String] = []
-	selection_label.text = "Blue: you   Coral: rival   Numbers: armies   Bright dot: armies that can still act   Coral dot: rival's last moves   Gold strokes: improved"
+	selection_label.text = "Blue: you   Coral: rival   Soldiers + tag: armies   Bright dot: can still act   Grey: done this turn   Coral dot: rival's last moves   Gold strokes: improved"
 	if source == NO_TILE:
 		tile_title.text = "Select a tile"
 		tile_detail.text = "Click one of your tiles to recruit, improve, or send its armies to a neighbouring tile. Gold dots mark land you can claim."

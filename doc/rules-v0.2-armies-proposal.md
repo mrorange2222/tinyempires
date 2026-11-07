@@ -91,7 +91,11 @@ preview shows the win chance and the result for both outcomes.
 
 ## 5. Interface
 
-- A number badge in the kingdom colour on each owned tile shows its armies.
+- Armies are shown as stylised soldiers in the kingdom colour (helmet with a
+  plume, tunic, round shield, spear): one figure per army, at most three,
+  with a small tag giving the exact number. Kept compact to leave room for
+  future tile improvements. Soldiers that have
+  finished for the turn are greyed; empty tiles show none (2026-11-07).
 - **Click your tile** to select it. The panel shows armies (ready / total),
   plus **Recruit +2 here** and **Improve**.
 - With your tile selected, **click an adjacent tile**:
