@@ -60,13 +60,17 @@ func _run() -> void:
 
 	var scene: PackedScene = load("res://scenes/main.tscn")
 	var main: Control = scene.instantiate()
+	# Tests play on the classic island and leave saved settings alone.
+	main.remember_settings = false
+	main.show_title_on_start = false
+	main.match_settings = {"difficulty": "Normal", "map": "Classic"}
 	root.add_child(main)
 	current_scene = main
 	var board: HexBoard = main.get_node("Margin/Layout/PlayArea/Scroll/Board")
 	board.tile_selected.connect(_on_tile_selected)
 	var scroll: ScrollContainer = main.get_node("Margin/Layout/PlayArea/Scroll")
 	var selection: Label = main.get_node("Margin/Layout/Selection")
-	for window_size in [Vector2i(1280, 800), Vector2i(800, 600)]:
+	for window_size in [Vector2i(1280, 800), Vector2i(800, 600), Vector2i(953, 1040)]:
 		var had_selection := board.has_selection
 		var selected_before_resize := board.selected_coordinates
 		var readout_before_resize := selection.text
@@ -100,6 +104,11 @@ func _run() -> void:
 			kinds[board.decor_kind(coordinates)] = true
 			_check(board.decor_kind(coordinates) == board.decor_kind(coordinates), "Decor is deterministic")
 		_check(kinds.size() == 3, "Groves, hills and meadows all appear")
+		var farms := {}
+		for coordinates: Vector2i in land:
+			farms[board.farm_kind(coordinates)] = true
+			_check(board.farm_kind(coordinates) == board.farm_kind(coordinates), "Farm design is stable per tile")
+		_check(farms.size() == 4, "All four farm designs appear across the island")
 		var water: ColorRect = board.get_node("Water")
 		_check(board.ground_texture != null, "Ground texture must be generated")
 		_check(water.mouse_filter == Control.MOUSE_FILTER_IGNORE,
@@ -189,22 +198,32 @@ func _run() -> void:
 
 	# Squeeze the map area so hexes hit their minimum size; the view must scroll.
 	root.size = Vector2i(1280, 800)
+	# Let a tiling window manager settle the window size (and layout) first.
+	for frame in range(10):
+		await process_frame
 	var sidebar: Control = main.get_node("Margin/Layout/PlayArea/Sidebar")
-	sidebar.custom_minimum_size.x = 900
+	var sidebar_size := sidebar.custom_minimum_size
+	# The info panel is a column in wide windows and a row in tall ones.
+	if main.tall_layout:
+		sidebar.custom_minimum_size.y = main.size.y - 260.0
+	else:
+		sidebar.custom_minimum_size.x = 900
 	for frame in range(10):
 		await process_frame
 	_check(is_equal_approx(board.hex_radius, HexBoard.MIN_HEX_RADIUS), "Squeezed map uses minimum hex size")
-	_check(board.size.x > scroll.size.x, "Squeezed map overflows horizontally")
+	_check(board.size.x > scroll.size.x or board.size.y > scroll.size.y, "Squeezed map overflows its view")
 	var wheel := InputEventMouseButton.new()
 	wheel.button_index = MOUSE_BUTTON_WHEEL_DOWN
 	wheel.pressed = true
-	wheel.shift_pressed = true
+	var sideways: bool = board.size.x > scroll.size.x
+	wheel.shift_pressed = sideways
 	wheel.position = scroll.global_position + scroll.size / 2.0
 	scroll.scroll_horizontal = 0
+	scroll.scroll_vertical = 0
 	await process_frame
 	root.push_input(wheel, true)
 	await process_frame
-	_check(scroll.scroll_horizontal > 0, "Shift + wheel scrolls an overflowing map")
+	_check((scroll.scroll_horizontal if sideways else scroll.scroll_vertical) > 0, "Mouse wheel scrolls an overflowing map")
 	for coordinates: Vector2i in land:
 		await _scroll_to(scroll, board, board.tile_center(coordinates))
 		var click := InputEventMouseButton.new()
@@ -215,7 +234,7 @@ func _run() -> void:
 		_check(last_picked == coordinates, "Scrolled minimum-size map picks correctly %s got %s" % [coordinates, last_picked])
 		click.pressed = false
 		root.push_input(click, true)
-	sidebar.custom_minimum_size.x = 290
+	sidebar.custom_minimum_size = sidebar_size
 	for frame in range(10):
 		await process_frame
 	await _scroll_to(scroll, board, board.size / 2.0)

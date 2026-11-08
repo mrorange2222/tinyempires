@@ -2,7 +2,10 @@ shader_type canvas_item;
 render_mode unshaded;
 
 uniform vec2 board_size;
-uniform vec2 land_centers[35];
+// Room for the largest generated island (10 x 10 land area).
+const int MAX_LAND = 100;
+uniform vec2 land_centers[MAX_LAND];
+uniform int land_count = 0;
 uniform float hex_radius = 76.0;
 uniform float tilt = 0.58;
 
@@ -21,7 +24,10 @@ float noise(vec2 p) {
 void fragment() {
 	vec2 p = UV * board_size;
 	float shore_distance = 10000.0;
-	for (int i = 0; i < 35; i++) {
+	for (int i = 0; i < MAX_LAND; i++) {
+		if (i >= land_count) {
+			break;
+		}
 		vec2 q = abs((p - land_centers[i]) / vec2(1.0, tilt));
 		float edge = max(q.x, dot(q, vec2(0.5, 0.8660254)));
 		shore_distance = min(shore_distance, edge - hex_radius * 0.8660254);

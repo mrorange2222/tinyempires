@@ -3,28 +3,41 @@ extends Control
 signal tile_selected(coordinates: Vector2i, terrain: String)
 
 const IslandMap = preload("res://map/island_map.gd")
+const TileArt = preload("res://ui/tile_art.gd")
 const EmpireGame = preload("res://game/empire_game.gd")
 const KINGDOM_COLORS: Array[Color] = [Color("#79c8df"), Color("#e8a08d")]
 # Polygon edge facing each neighbour direction (see IslandMap.DIRECTIONS).
 const EDGE_INDICES: Array[int] = [0, 5, 4, 3, 2, 1]
 # The view is turned 180 degrees so the player's kingdom starts at the bottom.
 const FLIPPED := true
-const PADDING := 18.0
+const PADDING := 8.0
 const TILT := 0.58
 const LAND_HEIGHT := 0.22
 const SHADOW_OFFSET := Vector2(0.10, 0.14)
-const MAX_HEX_RADIUS := 76.0
+const MAX_HEX_RADIUS := 120.0
+# Marker sizes (soldiers, tags, crowns) are designed at this radius and scale with it.
+const REFERENCE_RADIUS := 76.0
 const MIN_HEX_RADIUS := 50.0
 const WaterShader = preload("res://ui/water.gdshader")
 
 var tiles: Dictionary[Vector2i, String] = IslandMap.create_tiles()
 var selected_coordinates := Vector2i.ZERO
 var has_selection := false
+## Draws claim dots and move/attack marks (an option).
+var show_hints := true
 var has_hover := false
 var has_target := false
 var target_coordinates := Vector2i.ZERO
 var hovered_coordinates := Vector2i.ZERO
-var game: EmpireGame
+# Setting the game also sets the map: the board fits itself to the new island.
+var game: EmpireGame:
+	set(value):
+		game = value
+		if value != null:
+			tiles = value.terrain
+			if is_node_ready():
+				_land_bounds = _map_bounds()
+				fit_to_view()
 var ground_texture: ImageTexture
 var hex_radius := MAX_HEX_RADIUS
 var _land_bounds: Rect2
@@ -84,6 +97,7 @@ func _update_water(water_material: ShaderMaterial) -> void:
 			centers.append(tile_center(coordinates) + Vector2(0.0, LAND_HEIGHT * hex_radius))
 	water_material.set_shader_parameter("board_size", size)
 	water_material.set_shader_parameter("land_centers", centers)
+	water_material.set_shader_parameter("land_count", centers.size())
 	water_material.set_shader_parameter("hex_radius", hex_radius)
 	water_material.set_shader_parameter("tilt", TILT)
 	queue_redraw()
@@ -104,7 +118,7 @@ func _map_bounds() -> Rect2:
 			bounds = Rect2(_raw_center(coordinates), Vector2.ZERO)
 			first = false
 		bounds = bounds.expand(_raw_center(coordinates))
-	var margin := Vector2(sqrt(3.0) / 2.0 + 0.5, 1.5)
+	var margin := Vector2(sqrt(3.0) / 2.0 + 0.25, 1.25)
 	return Rect2(bounds.position - margin, bounds.size + margin * 2.0)
 
 
@@ -211,6 +225,11 @@ func _draw_decor(coordinates: Vector2i) -> void:
 		if (seed_value >> index) % 3 != 0 or kind == "meadow":
 			slots.append(DECOR_SLOTS[index])
 	var count := {"grove": 4, "hills": 2, "meadow": 4}[kind] as int
+	# Built-up tiles keep only a little grass, so castles and farms stand out.
+	if game != null and (game.is_capital(coordinates) or game.improvements.has(coordinates) or game.forts.has(coordinates)):
+		kind = "meadow"
+		slots = [DECOR_SLOTS[2], DECOR_SLOTS[4]]
+		count = 2
 	slots = slots.slice(0, count)
 	slots.sort_custom(func(a: Vector2, b: Vector2) -> bool: return a.y < b.y)
 	for slot_index in range(slots.size()):
@@ -218,53 +237,11 @@ func _draw_decor(coordinates: Vector2i) -> void:
 		var size := r * (0.15 + 0.03 * float((seed_value + slot_index * 7) % 3))
 		match kind:
 			"grove":
-				_draw_tree(at, size)
+				TileArt.tree(self, at, size)
 			"hills":
-				_draw_hill(at, size * 2.4)
+				TileArt.hill(self, at, size * 2.4)
 			"meadow":
-				_draw_tuft(at, size, slot_index + seed_value)
-
-
-func _draw_tree(base: Vector2, size: float) -> void:
-	_draw_ellipse(base + Vector2(size * 0.25, size * 0.12), Vector2(size * 0.75, size * 0.28), Color(0.05, 0.12, 0.05, 0.28))
-	draw_line(base, base + Vector2(0, -size * 0.55), Color("#6b4f33"), maxf(2.0, size * 0.18), true)
-	var crown := base + Vector2(0, -size * 1.05)
-	draw_circle(crown, size * 0.62, Color("#3f6b3c"))
-	draw_circle(crown + Vector2(-size * 0.18, -size * 0.2), size * 0.38, Color("#5a8a4a"))
-	draw_circle(crown + Vector2(-size * 0.26, -size * 0.3), size * 0.14, Color(1, 1, 0.8, 0.25))
-
-
-func _draw_hill(base: Vector2, width: float) -> void:
-	var points := PackedVector2Array()
-	var height := width * 0.42
-	for step in range(17):
-		var t := step / 16.0
-		points.append(base + Vector2((t - 0.5) * width, -sin(t * PI) * height))
-	draw_colored_polygon(points, Color("#a4a466"))
-	var shade := PackedVector2Array()
-	for step in range(8, 17):
-		var t := step / 16.0
-		shade.append(base + Vector2((t - 0.5) * width, -sin(t * PI) * height))
-	shade.append(base)
-	draw_colored_polygon(shade, Color(0.32, 0.36, 0.18, 0.35))
-	draw_polyline(points, Color(0.3, 0.33, 0.17, 0.5), 1.2, true)
-
-
-func _draw_tuft(base: Vector2, size: float, variant: int) -> void:
-	var green := Color("#4f7a3a")
-	for blade in [-1, 0, 1]:
-		draw_line(base + Vector2(blade * size * 0.2, 0), base + Vector2(blade * size * 0.45, -size * 0.7),
-				green, 1.6, true)
-	var petals: Array[Color] = [Color("#f4efd8"), Color("#f2d36b"), Color("#e8a9b8")]
-	draw_circle(base + Vector2(size * 0.5, -size * 0.25), maxf(1.6, size * 0.13), petals[variant % 3])
-
-
-func _draw_ellipse(center: Vector2, radii: Vector2, color: Color) -> void:
-	var points := PackedVector2Array()
-	for step in range(16):
-		var angle := TAU * step / 16.0
-		points.append(center + Vector2(cos(angle) * radii.x, sin(angle) * radii.y))
-	draw_colored_polygon(points, color)
+				TileArt.tuft(self, at, size, slot_index + seed_value)
 
 
 func _draw() -> void:
@@ -324,91 +301,59 @@ func pick_land(point: Vector2) -> Variant:
 	return null
 
 
+# Tile layout (offsets at the reference radius): buildings stand along the
+# back of the tile, soldiers in front of them, the army tag front-right.
+const CASTLE_SPOT := Vector2(-24, -10)
+const FARM_SPOT := Vector2(-20, -12)
+const FARM_SPOT_BESIDE_CASTLE := Vector2(25, -15)
+const ARMY_SPOT := Vector2(15, 12)
+const ARMY_SPOT_AT_CAPITAL := Vector2(4, 14)
+const TAG_OFFSET := Vector2(21, 7)
+## Where soldiers stand for 1, 2 or 3 figures (offsets from ARMY_SPOT).
+const SOLDIER_SPOTS: Array = [
+	[Vector2(0, 0)],
+	[Vector2(-8, -3), Vector2(7, 3)],
+	[Vector2(-13, -4), Vector2(11, -2), Vector2(-1, 5)],
+]
+
+
+## Farm design for a tile. All farms work the same; the look varies per tile
+## (stable for the tile, so it does not change between redraws).
+func farm_kind(coordinates: Vector2i) -> String:
+	var roll := posmod(coordinates.x * 37 + coordinates.y * 101 + coordinates.x * coordinates.y * 11, 97)
+	return TileArt.FARM_KINDS[roll % TileArt.FARM_KINDS.size()]
+
+
 func _draw_markers() -> void:
 	if game == null:
 		return
-	var scale_factor := hex_radius / MAX_HEX_RADIUS
-	# Back to front, so nearer soldiers overlap the ones behind them.
+	var s := hex_radius / REFERENCE_RADIUS
+	# Back to front, so nearer pieces overlap the ones behind them.
 	for coordinates: Vector2i in draw_order():
 		var owner: int = game.owners.get(coordinates, EmpireGame.NEUTRAL)
 		if owner == EmpireGame.NEUTRAL:
 			continue
 		var center := tile_center(coordinates)
 		var color := KINGDOM_COLORS[owner]
+		var capital: bool = game.is_capital(coordinates)
+		if capital:
+			TileArt.castle(self, center + CASTLE_SPOT * s, color, s * 0.9)
 		if game.improvements.has(coordinates):
-			var origin := center + Vector2(32, -12) * scale_factor
-			for index in range(3):
-				var offset := origin + Vector2((index - 1) * 6, (index - 1) * 2) * scale_factor
-				draw_line(offset + Vector2(-3, 4) * scale_factor, offset + Vector2(3, -4) * scale_factor,
-						Color("#ead198"), 2.5, true)
+			var spot := FARM_SPOT_BESIDE_CASTLE if capital else FARM_SPOT
+			TileArt.farm(self, center + spot * s, farm_kind(coordinates), color, s * (0.72 if capital else 1.0))
+		elif game.forts.has(coordinates):
+			var spot := FARM_SPOT_BESIDE_CASTLE if capital else FARM_SPOT
+			TileArt.fort(self, center + spot * s, color, s * (0.65 if capital else 0.9))
 		var count: int = game.armies[coordinates]
 		if count > 0:
 			var can_act: bool = owner == game.active and game.ready[coordinates] > 0
 			var spent: bool = owner == game.active and not can_act
-			_draw_army(center, color, count, spent, scale_factor)
-			_draw_army_tag(center + Vector2(19, 13) * scale_factor, color, count, spent,
-					can_act and owner == EmpireGame.PLAYER, scale_factor)
-		# The crown goes on top so soldiers never hide it.
-		if game.is_capital(coordinates):
-			_draw_crown(center + Vector2(-33, -20) * scale_factor, color, scale_factor)
-
-
-## Where soldiers stand for 1, 2 or 3 figures (offsets from the tile centre).
-const SOLDIER_SPOTS: Array = [
-	[Vector2(0, 10)],
-	[Vector2(-9, 4), Vector2(9, 12)],
-	[Vector2(-15, 3), Vector2(13, 5), Vector2(-1, 15)],
-]
-
-
-## Soldiers standing on a tile: one per army, at most three (the tag shows the total).
-func _draw_army(center: Vector2, color: Color, count: int, spent: bool, s: float) -> void:
-	var figures := mini(count, 3)
-	var tint := color.lerp(Color("#7a8584"), 0.6) if spent else color
-	for spot: Vector2 in SOLDIER_SPOTS[figures - 1]:
-		_draw_soldier(center + spot * s * 0.85, tint, spent, s * 0.9)
-
-
-## One stylised soldier: helmet with a plume, tunic, round shield and spear.
-func _draw_soldier(feet: Vector2, color: Color, spent: bool, s: float) -> void:
-	var ink := Color(0.07, 0.1, 0.12, 0.9)
-	var steel := Color("#c3cbcc") if not spent else Color("#8f9898")
-	var steel_dark := steel.darkened(0.35)
-	var skin := Color("#e9c7a3") if not spent else Color("#b9a796")
-	_draw_ellipse(feet + Vector2(1, 0), Vector2(10, 3.5) * s, Color(0, 0, 0, 0.3))
-	# Spear behind the body.
-	draw_line(feet + Vector2(8, 1) * s, feet + Vector2(8, -40) * s, Color("#6b4f33"), 2.0 * s, true)
-	draw_colored_polygon(PackedVector2Array([feet + Vector2(8, -46) * s, feet + Vector2(10.5, -39) * s,
-		feet + Vector2(5.5, -39) * s]), steel)
-	# Legs.
-	draw_line(feet + Vector2(-3, -9) * s, feet + Vector2(-3, 0) * s, Color("#2b3236"), 3.0 * s, true)
-	draw_line(feet + Vector2(3, -9) * s, feet + Vector2(3, 0) * s, Color("#2b3236"), 3.0 * s, true)
-	# Tunic, slightly flared, with a belt.
-	var tunic := PackedVector2Array([feet + Vector2(-7.5, -8) * s, feet + Vector2(7.5, -8) * s,
-		feet + Vector2(5.5, -23) * s, feet + Vector2(-5.5, -23) * s])
-	draw_colored_polygon(tunic, color)
-	draw_line(feet + Vector2(-6.8, -13) * s, feet + Vector2(6.8, -13) * s, color.darkened(0.35), 1.6 * s, true)
-	tunic.append(tunic[0])
-	draw_polyline(tunic, ink, 1.0, true)
-	# Hand on the spear.
-	draw_circle(feet + Vector2(8, -18) * s, 1.8 * s, skin)
-	# Head.
-	draw_circle(feet + Vector2(0, -27.5) * s, 4.4 * s, skin)
-	# Helmet: rounded dome with a brim, nose guard and a plume in kingdom colour.
-	var dome := PackedVector2Array()
-	for step in range(13):
-		var angle := PI + PI * step / 12.0
-		dome.append(feet + Vector2(cos(angle) * 5.6, -28.5 + sin(angle) * 5.6) * s)
-	draw_colored_polygon(dome, steel)
-	draw_line(feet + Vector2(-6.6, -28.3) * s, feet + Vector2(6.6, -28.3) * s, steel_dark, 1.8 * s, true)
-	draw_line(feet + Vector2(0, -28.3) * s, feet + Vector2(0, -25.2) * s, steel_dark, 1.2 * s, true)
-	draw_circle(feet + Vector2(-2, -31.5) * s, 1.2 * s, Color(1, 1, 1, 0.55))
-	_draw_ellipse(feet + Vector2(0, -35.5) * s, Vector2(2.2, 3.2) * s, color.lightened(0.15))
-	# Round shield in front, kingdom colour with a steel rim and boss.
-	var shield := feet + Vector2(-6.5, -15) * s
-	draw_circle(shield, 6.2 * s, color.darkened(0.15))
-	draw_arc(shield, 6.2 * s, 0, TAU, 20, steel, 1.6 * s, true)
-	draw_circle(shield, 1.6 * s, steel)
+			var tint := color.lerp(Color("#7a8584"), 0.6) if spent else color
+			var army_spot := ARMY_SPOT_AT_CAPITAL if capital else ARMY_SPOT
+			for spot: Vector2 in SOLDIER_SPOTS[mini(count, 3) - 1]:
+				TileArt.soldier(self, center + (army_spot + spot) * s, tint, spent, s * 0.9)
+			_draw_army_tag(center + (army_spot + TAG_OFFSET) * s, color, count, spent,
+					can_act and owner == EmpireGame.PLAYER, s)
 
 
 ## Small tag with the exact army count; a bright dot means armies can still act.
@@ -427,26 +372,16 @@ func _draw_army_tag(at: Vector2, color: Color, count: int, spent: bool, can_act:
 		draw_circle(at + Vector2(radius * 0.8, -radius * 0.8), 3.2, Color("#fff2b8"))
 
 
-func _draw_crown(at: Vector2, color: Color, s: float) -> void:
-	draw_circle(at, 10.5 * s, Color("#1d3338", 0.85))
-	var k := s * 0.75
-	var crown := PackedVector2Array([
-		at + Vector2(-9, -3) * k, at + Vector2(-5, 1) * k, at + Vector2(0, -7) * k,
-		at + Vector2(5, 1) * k, at + Vector2(9, -3) * k, at + Vector2(7, 6) * k, at + Vector2(-7, 6) * k,
-	])
-	draw_colored_polygon(crown, color)
-
-
 # Hints only appear where the player can act right now.
 func _draw_hints() -> void:
 	if game == null:
 		return
 	_draw_rival_changes()
-	if game.winner != EmpireGame.NEUTRAL or game.active != EmpireGame.PLAYER:
+	if not show_hints or game.winner != EmpireGame.NEUTRAL or game.active != EmpireGame.PLAYER:
 		return
 	var from_own: bool = has_selection and game.owners.get(selected_coordinates, -1) == EmpireGame.PLAYER
 	for coordinates: Vector2i in game.owners:
-		var center := tile_center(coordinates) + Vector2(0, -46) * (hex_radius / MAX_HEX_RADIUS)
+		var center := tile_center(coordinates) + Vector2(0, -46) * (hex_radius / REFERENCE_RADIUS)
 		if game.action_error("claim", coordinates).is_empty() \
 				and (not from_own or game.are_adjacent(selected_coordinates, coordinates)):
 			draw_circle(tile_center(coordinates), 5.0, Color(0.95, 0.87, 0.6, 0.9))
@@ -467,7 +402,7 @@ func _draw_rival_changes() -> void:
 		var marked := tile_polygon(coordinates)
 		marked.append(marked[0])
 		draw_polyline(marked, Color(1.0, 0.85, 0.8, 0.7), 2.0, true)
-		var dot := tile_center(coordinates) + Vector2(-32, 6) * (hex_radius / MAX_HEX_RADIUS)
+		var dot := tile_center(coordinates) + Vector2(-32, 6) * (hex_radius / REFERENCE_RADIUS)
 		draw_circle(dot, 6.0, Color("#ffffff"))
 		draw_circle(dot, 4.5, Color("#ff8f73"))
 	if not game.rival_changes.is_empty():

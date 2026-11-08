@@ -3,18 +3,22 @@ extends RefCounted
 const IslandMap = preload("res://map/island_map.gd")
 const AiPlayer = preload("res://game/ai/ai_player.gd")
 const AiPersonalities = preload("res://game/ai/ai_personalities.gd")
+const AiDifficulty = preload("res://game/ai/ai_difficulty.gd")
 const PLAYER := 0
 const RIVAL := 1
 const NEUTRAL := -1
 const DRAW := 2
+# Round limit of the classic map; each match uses `max_rounds` from its map.
 const MAX_ROUNDS := 20
 const CLAIM_COST := 3
 const IMPROVE_COST := 3
 const RECRUIT_COST := 3
+const FORT_COST := 6
+const FORT_DEFENSE := 5
 const RECRUIT_ARMIES := 2
 const CAPITAL_DEFENSE := 2
 const NO_TILE := Vector2i(-999, -999)
-const ACTIONS: Array[String] = ["claim", "improve", "recruit", "move", "attack"]
+const ACTIONS: Array[String] = ["claim", "improve", "fort", "recruit", "move", "attack"]
 
 class Kingdom:
 	var gold := 6
@@ -23,15 +27,22 @@ class Kingdom:
 	func _init(at: Vector2i) -> void:
 		capital = at
 
-var terrain: Dictionary[Vector2i, String] = IslandMap.create_tiles()
+var terrain: Dictionary[Vector2i, String] = {}
+## Map and difficulty chosen for this match.
+var map_name := IslandMap.CLASSIC
+var difficulty := "Normal"
+var max_rounds := MAX_ROUNDS
 var owners: Dictionary[Vector2i, int] = {}
 var improvements: Dictionary[Vector2i, bool] = {}
+var forts: Dictionary[Vector2i, bool] = {}
+# Established recruiting locations for the active turn (#7).
+var recruit_tiles: Dictionary[Vector2i, bool] = {}
 var armies: Dictionary[Vector2i, int] = {}
 # Armies on a tile that may still move or attack this turn (1 or 2 steps left).
 var ready: Dictionary[Vector2i, int] = {}
 # Of those, armies that still have both steps (always <= ready).
 var fresh: Dictionary[Vector2i, int] = {}
-var kingdoms: Array[Kingdom] = [Kingdom.new(Vector2i(3, 1)), Kingdom.new(Vector2i(2, 7))]
+var kingdoms: Array[Kingdom] = []
 var active := PLAYER
 var round_number := 1
 var winner := NEUTRAL
@@ -47,27 +58,39 @@ var improved_this_turn := false
 var ai_actions := 0
 
 
-func _init(seed_value: int = -1) -> void:
+## `settings` may set "map" (a size name from IslandMap.SIZES, or "Classic",
+## the default) and "difficulty".
+func _init(seed_value: int = -1, settings: Dictionary = {}) -> void:
+	var map_rng := RandomNumberGenerator.new()
 	if seed_value >= 0:
 		rng.seed = seed_value
 		ai_rng.seed = seed_value * 7919 + 1
+		map_rng.seed = seed_value * 104729 + 7
 	else:
 		rng.randomize()
 		ai_rng.randomize()
-	var names := AiPersonalities.names()
+		map_rng.randomize()
+	difficulty = settings.get("difficulty", "Normal")
+	var map := IslandMap.build(settings.get("map", IslandMap.CLASSIC), map_rng)
+	map_name = map["name"]
+	max_rounds = map["rounds"]
+	terrain = map["tiles"]
+	var starts: Array = map["starts"]
+	kingdoms = [Kingdom.new(starts[PLAYER][0]), Kingdom.new(starts[RIVAL][0])]
+	# The rival plays at the chosen difficulty; the player's side (computer only
+	# in tests and simulations) plays Normal unless changed.
 	for side in [PLAYER, RIVAL]:
-		set_ai_style(side, names[ai_rng.randi_range(0, names.size() - 1)])
+		set_ai_difficulty(side, difficulty if side == RIVAL else "Normal")
 	for tile: Vector2i in terrain:
 		if terrain[tile] != "Water":
 			owners[tile] = NEUTRAL
 			armies[tile] = 0
 			ready[tile] = 0
 			fresh[tile] = 0
-	for setup in [[PLAYER, [Vector2i(3, 1), Vector2i(4, 1), Vector2i(3, 2)]],
-			[RIVAL, [Vector2i(2, 7), Vector2i(1, 7), Vector2i(2, 6)]]]:
-		for tile: Vector2i in setup[1]:
-			owners[tile] = setup[0]
-			armies[tile] = 3 if tile == kingdoms[setup[0]].capital else 1
+	for side in [PLAYER, RIVAL]:
+		for tile: Vector2i in starts[side]:
+			owners[tile] = side
+			armies[tile] = 3 if tile == kingdoms[side].capital else 1
 	_start_turn(PLAYER)
 
 
@@ -92,11 +115,21 @@ func total_armies(side: int) -> int:
 
 
 func income(side: int) -> int:
-	var amount := 2 + tile_count(side)
-	for tile: Vector2i in improvements:
+	var amount := 2
+	for tile: Vector2i in owners:
 		if owners[tile] == side:
-			amount += 1
+			amount += tile_income(tile)
 	return amount
+
+
+func tile_income(tile: Vector2i) -> int:
+	if owners.get(tile, NEUTRAL) == NEUTRAL or forts.has(tile):
+		return 0
+	return 2 if improvements.has(tile) else 1
+
+
+func can_recruit_on(tile: Vector2i) -> bool:
+	return owners.get(tile, NEUTRAL) == active and recruit_tiles.has(tile)
 
 
 func is_capital(tile: Vector2i) -> bool:
@@ -128,7 +161,8 @@ func hex_distance(a: Vector2i, b: Vector2i) -> int:
 
 
 func defense(tile: Vector2i) -> int:
-	return armies.get(tile, 0) + (CAPITAL_DEFENSE if is_capital(tile) else 0)
+	return armies.get(tile, 0) + (CAPITAL_DEFENSE if is_capital(tile) else 0) \
+		+ (FORT_DEFENSE if forts.has(tile) else 0)
 
 
 # Chance that `sent` armies beat a defense value when both add a 0-2 roll.
@@ -201,11 +235,22 @@ func action_error(action: String, tile: Vector2i, target: Vector2i = NO_TILE, co
 				return "Improve a tile you own."
 			if improvements.has(tile):
 				return "This tile is already improved."
+			if forts.has(tile):
+				return "A fort cannot be replaced with a farm."
 			if gold < IMPROVE_COST:
 				return "Need 3 gold to improve."
+		"fort":
+			if owners[tile] != active:
+				return "Build a fort on a tile you own."
+			if forts.has(tile):
+				return "This tile already has a fort."
+			if gold < FORT_COST:
+				return "Need 6 gold to build a fort."
 		"recruit":
 			if owners[tile] != active:
 				return "Recruit on a tile you own."
+			if not can_recruit_on(tile):
+				return "Recruit here next turn: newly acquired land cannot recruit yet."
 			if gold < RECRUIT_COST:
 				return "Need 3 gold to recruit."
 		"move", "attack":
@@ -247,6 +292,11 @@ func execute(action: String, tile: Vector2i, target: Vector2i = NO_TILE, count: 
 			improvements[tile] = true
 			improved_this_turn = true
 			note = "improved a tile (+1 gold per round)."
+		"fort":
+			kingdom.gold -= FORT_COST
+			improvements.erase(tile)
+			forts[tile] = true
+			note = "built a fort (+5 defense, 0 gold per round)."
 		"recruit":
 			kingdom.gold -= RECRUIT_COST
 			armies[tile] += RECRUIT_ARMIES
@@ -305,6 +355,7 @@ func _attack(source: Vector2i, target: Vector2i, sent: int) -> String:
 		if escape != NO_TILE:
 			armies[escape] += retreating
 		owners[target] = active
+		recruit_tiles.erase(target)
 		armies[target] = survivors
 		ready[target] = 0
 		fresh[target] = 0
@@ -328,7 +379,10 @@ func _start_turn(side: int) -> void:
 	active = side
 	improved_this_turn = false
 	ai_actions = 0
+	recruit_tiles.clear()
 	for tile: Vector2i in owners:
+		if owners[tile] == side:
+			recruit_tiles[tile] = true
 		ready[tile] = armies[tile] if owners[tile] == side else 0
 		fresh[tile] = ready[tile]
 
@@ -340,7 +394,7 @@ func end_turn() -> String:
 		rival_changes.clear()
 		_start_turn(RIVAL)
 		return ""
-	if round_number >= MAX_ROUNDS:
+	if round_number >= max_rounds:
 		_finish_on_land()
 		return ""
 	for side in [PLAYER, RIVAL]:
@@ -358,7 +412,7 @@ func _finish_on_land() -> void:
 		winner = DRAW
 	else:
 		winner = PLAYER if player_land > rival_land else RIVAL
-	_record("Round %d complete. Land: you %d, rival %d." % [MAX_ROUNDS, player_land, rival_land])
+	_record("Round %d complete. Land: you %d, rival %d." % [max_rounds, player_land, rival_land])
 
 
 func _record(message: String) -> void:
@@ -374,6 +428,17 @@ var ai_rng := RandomNumberGenerator.new()
 var ai_players: Array = [null, null]
 ## Personality name per side, e.g. "Raider".
 var ai_styles: Array[String] = ["", ""]
+## Difficulty level per side, e.g. "Hard".
+var ai_levels: Array[String] = ["Normal", "Normal"]
+
+
+## Sets a side's difficulty and picks a personality allowed at that level.
+func set_ai_difficulty(side: int, level: String) -> void:
+	ai_levels[side] = level if AiDifficulty.LEVELS.has(level) else "Normal"
+	var pool: Array = AiDifficulty.get_level(ai_levels[side])["personalities"]
+	if pool.is_empty():
+		pool = AiPersonalities.names()
+	set_ai_style(side, pool[ai_rng.randi_range(0, pool.size() - 1)])
 
 
 func set_ai_style(side: int, style_name: String) -> void:
@@ -385,6 +450,7 @@ func set_ai_style(side: int, style_name: String) -> void:
 ## Accepts any personality, including blends made with blended_with().
 func set_ai_personality(side: int, personality: Resource) -> void:
 	ai_players[side] = AiPlayer.new(self, side, personality, ai_rng)
+	ai_players[side].skill = AiDifficulty.get_level(ai_levels[side])
 	ai_styles[side] = personality.display_name
 
 

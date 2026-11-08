@@ -7,6 +7,7 @@ var checks := 0
 
 func _initialize() -> void:
 	_setup_and_economy()
+	_forts_and_recruiting()
 	_chances()
 	_movement()
 	_combat()
@@ -29,7 +30,7 @@ func check(condition: bool, message: String) -> void:
 
 
 func state(game: Game) -> String:
-	return str([game.owners, game.improvements, game.armies, game.ready, game.fresh, game.kingdoms[0].gold,
+	return str([game.owners, game.improvements, game.forts, game.recruit_tiles, game.armies, game.ready, game.fresh, game.kingdoms[0].gold,
 		game.kingdoms[1].gold, game.active, game.round_number, game.winner, game.history])
 
 
@@ -64,6 +65,10 @@ func _setup_and_economy() -> void:
 	check(game.kingdoms[0].gold == 0 and game.income(0) == 7, "Improve: 3 gold, +1 income")
 	rejected(game, "improve", Vector2i(2, 2))
 	game.kingdoms[0].gold = 9
+	rejected(game, "recruit", Vector2i(2, 2))
+	game.end_turn()
+	game.end_turn()
+	game.kingdoms[0].gold = 9
 	check(game.execute("recruit", Vector2i(2, 2)).is_empty() and game.execute("recruit", Vector2i(2, 2)).is_empty(), "Recruit repeatedly")
 	check(game.armies[Vector2i(2, 2)] == 4 and game.ready[Vector2i(2, 2)] == 4 and game.fresh[Vector2i(2, 2)] == 0
 			and game.kingdoms[0].gold == 3, "Recruits +2 each, with one step left")
@@ -83,6 +88,89 @@ func _setup_and_economy() -> void:
 	check(game.ready[Vector2i(2, 2)] == game.armies[Vector2i(2, 2)] and game.fresh[Vector2i(2, 2)] == game.armies[Vector2i(2, 2)],
 			"Next turn all armies have two steps")
 	check(game.kingdoms[0].gold == 3 + 7, "Income paid after the round")
+
+
+func _forts_and_recruiting() -> void:
+	var game := Game.new(18)
+	var home := game.kingdoms[0].capital
+	var front := Vector2i(3, 2)
+	game.kingdoms[0].gold = 30
+	check(game.execute("fort", front).is_empty(), "Build fort on ordinary land")
+	check(game.kingdoms[0].gold == 24 and game.defense(front) == 6
+			and game.tile_income(front) == 0 and game.income(0) == 4, "Fort costs exactly 6, adds 5, cancels tile income")
+	rejected(game, "fort", front)
+	rejected(game, "improve", front)
+	rejected(game, "fort", game.kingdoms[1].capital)
+	rejected(game, "fort", Vector2i(2, 2))
+	check(game.execute("improve", home).is_empty() and game.tile_income(home) == 2, "Farm income unchanged")
+	var before := game.kingdoms[0].gold
+	check(game.execute("fort", home).is_empty(), "Replace capital farm with fort")
+	check(game.kingdoms[0].gold == before - 6 and not game.improvements.has(home)
+			and game.defense(home) == 10 and game.income(0) == 3, "Replacement removes farm and stacks fort with capital")
+	game.kingdoms[0].gold = 5
+	rejected(game, "fort", Vector2i(4, 1))
+	game.armies[home] = 0
+	game.ready[home] = 0
+	game.fresh[home] = 0
+	check(game.defense(home) == 7 and Game.win_chance(5, 7) == 0.0
+			and is_equal_approx(Game.win_chance(6, 7), 1.0 / 9.0)
+			and Game.win_chance(10, 7) == 1.0, "Empty fortified capital has exact +7 thresholds")
+	game.armies[front] = 0
+	game.ready[front] = 0
+	game.fresh[front] = 0
+	check(game.defense(front) == 5 and is_equal_approx(Game.win_chance(4, 5), 1.0 / 9.0)
+			and Game.win_chance(3, 5) == 0.0 and Game.win_chance(8, 5) == 1.0, "Exact empty-fort combat thresholds")
+	var enemy := Vector2i(3, 3)
+	game.owners[enemy] = 1
+	game.armies[enemy] = 8
+	game.end_turn()
+	game.forced_rolls = [0, 2]
+	var preview := game.battle_preview(front, 8)
+	check(preview["win_survivors"] == 8 and preview["lose_attacker_loss"] == 0, "Fort bonus does not add casualties")
+	check(game.execute("attack", enemy, front, 8).is_empty(), "Attack an empty fort with dice")
+	check(game.forts.has(front) and game.owners[front] == 1 and game.armies[front] == 8
+			and game.tile_income(front) == 0 and game.history.back().contains("8+0 vs 5+2"),
+			"Captured fort survives, uses dice, and keeps zero income")
+	rejected(game, "recruit", front)
+	var rival_gold := game.kingdoms[1].gold
+	var rival_income := game.income(1)
+	game.end_turn()
+	check(game.kingdoms[1].gold == rival_gold + rival_income, "Fort maintenance applies to the actual round payout")
+	game.kingdoms[0].gold = 30
+	rejected(game, "recruit", front)
+	# Take back established land: original ownership is not enough to recruit.
+	game.armies[home] = 15
+	game.ready[home] = 15
+	game.fresh[home] = 15
+	game.forced_rolls = [2, 0]
+	check(game.execute("attack", home, front, 15).is_empty(), "Recapture fortified land")
+	rejected(game, "recruit", front)
+	game.end_turn()
+	game.end_turn()
+	check(game.execute("recruit", front).is_empty(), "Recaptured land recruits on its next turn")
+	# Capturing fresh land never enables recruiting during the same turn.
+	game = Game.new(19)
+	game.kingdoms[0].gold = 30
+	game.owners[enemy] = 1
+	check(game.execute("attack", Vector2i(3, 2), enemy, 1).is_empty(), "Capture empty enemy land")
+	rejected(game, "recruit", enemy)
+	game.end_turn()
+	game.end_turn()
+	check(game.execute("recruit", enemy).is_empty(), "Captured land recruits next turn")
+	game = Game.new(20)
+	var defended := Vector2i(3, 3)
+	game.owners[defended] = 1
+	game.armies[defended] = 3
+	game.forts[defended] = true
+	game.armies[Vector2i(3, 2)] = 11
+	game.ready[Vector2i(3, 2)] = 11
+	game.fresh[Vector2i(3, 2)] = 11
+	var fortified_preview := game.battle_preview(defended, 11)
+	check(fortified_preview["win_survivors"] == 9 and fortified_preview["lose_attacker_loss"] == 2
+			and fortified_preview["lose_defender_loss"] == 3, "Garrisoned fort casualties use armies, not total defense")
+	check(game.execute("attack", Vector2i(3, 2), defended, 11).is_empty()
+			and game.armies[defended] == 9 and game.forts.has(defended),
+			"Garrisoned fort captures apply previewed casualties and retain the fort")
 
 
 func _chances() -> void:
@@ -319,7 +407,9 @@ func _ai() -> void:
 	for i in range(4):
 		game.end_turn()
 		game.play_rival_turn()
-	check(game.armies[game.kingdoms[1].capital] >= game.ai_personality(1).capital_garrison, "Rival keeps its capital garrison")
+	var home := game.kingdoms[1].capital
+	check(game.armies[home] + (Game.FORT_DEFENSE if game.forts.has(home) else 0) >= game.ai_personality(1).capital_garrison,
+			"Rival keeps its capital garrison or equivalent fort defense")
 	var results := {0: 0, 1: 0, 2: 0}
 	var passive_losses := 0
 	var longest := 0

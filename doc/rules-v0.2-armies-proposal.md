@@ -13,13 +13,23 @@ Everything else below is a proposal with suggested starting numbers.
 
 ## 1. What stays the same
 
-- Same island, one player vs one rival, full map visible.
-- Gold is the only resource. Income after each round: 2 + owned tiles + improvements.
+- One player vs one rival, full map visible. *Changed 2026-11-07 ([issue #4](https://github.com/mrorange2222/tinyempires/issues/4)):*
+  each match gets a generated, mirror-symmetric island in one of three sizes
+  (Minuscule ~22 land / 15 rounds, Tiny ~35 / 20, Small ~55 / 25), chosen on
+  the New match screen with the difficulty.
+- Gold is the only resource. Income after each round: 2 + 1 per ordinary
+  owned tile + 2 per farm tile; fort tiles contribute 0.
 - Claim land: 3 gold, unclaimed land next to your territory.
 - Improve: 3 gold, +1 gold per round, once per tile; it survives capture.
+- *Added 2026-11-08 ([issue #7](https://github.com/mrorange2222/tinyempires/issues/7)):*
+  Fort: 6 gold, +5 defense, zero total tile income (maintenance cancels the
+  normal +1). May replace a farm for the full cost, removing its income;
+  cannot coexist with a farm or be converted back. Survives capture.
+  Allowed on capitals, stacking with their +2 for a total +7 bonus.
 - Gold actions are unlimited each turn, limited only by gold.
-- Capture the rival capital to win at once. Otherwise, after round 20 the
-  kingdom with more land wins; equal land is a draw.
+- Capture the rival capital to win at once. Otherwise, when the last round
+  ends (15, 20 or 25 by map size) the kingdom with more land wins; equal land
+  is a draw.
 
 ## 2. Armies
 
@@ -28,8 +38,12 @@ Everything else below is a proposal with suggested starting numbers.
 - **Recruit:** 3 gold places **+2 armies on one owned tile you choose**.
   *Changed 2026-11-07:* recruiting uses one of the recruits' two steps, so
   they can still **move once or attack** this turn.
-- Newly claimed land starts with **0 armies**. An undefended tile (no armies
-  and not a capital) falls to any attack without a battle or dice.
+- *Changed 2026-11-08 ([issue #7](https://github.com/mrorange2222/tinyempires/issues/7)):*
+  recruit only on land owned at the start of the active turn. Claimed,
+  captured or recaptured land waits until next turn; no limit on repeated
+  recruitment on eligible tiles. This applies equally to both sides.
+- Newly claimed land starts with **0 armies**. An undefended tile (no armies,
+  no capital or fort bonus) falls to any attack without a battle or dice.
 - There is no army upkeep and no limit per tile.
 
 ## 3. Moving
@@ -42,7 +56,7 @@ Everything else below is a proposal with suggested starting numbers.
   winners stop on the captured tile.
 - When moving, armies with 2 steps go first (they arrive with 1 step left);
   when attacking, armies that already moved go first, keeping rested armies
-  free. Recruits still act only from the next turn.
+  free. Recruits on established land can move or attack once immediately.
 - Tiles may be left empty. That is allowed, but it is risky.
 
 ## 4. Attacking with a little dice
@@ -51,7 +65,8 @@ Attack from one of your tiles into an **adjacent enemy tile**, choosing how
 many ready armies to send.
 
 - **Attack total** = armies sent + attacker roll.
-- **Defense total** = armies on the tile + 2 for a capital + defender roll.
+- **Defense total** = armies on the tile + 2 for a capital + 5 for a fort
+  + defender roll.
 - Each roll is a die that shows **0, 1 or 2** with equal chance.
 - **Attacker wins if attack total is greater than defense total**; ties go
   to the defender.
@@ -69,6 +84,9 @@ Typical chances (no capital bonus):
 
 **Losses** do not depend on the dice, only on who wins:
 
+- Capital and fort bonuses affect combat odds, not casualties. Even an empty
+  fort rolls dice: with defense 5, 4 attackers have an 11% chance, 3 have
+  no chance, and 8 guarantee victory. An empty fortified capital has defense 7.
 - Each side loses armies equal to **half the other side's armies, rounded
   up**, but never more than it had.
 - **If the attacker wins:** the tile changes owner and the surviving attackers
@@ -98,6 +116,9 @@ preview shows the win chance and the result for both outcomes.
   finished for the turn are greyed; empty tiles show none (2026-11-07).
 - **Click your tile** to select it. The panel shows armies (ready / total),
   plus **Recruit +2 here** and **Improve**.
+- **Build fort** shows the cost and maintenance trade-off; on a farm it is
+  labelled **Replace farm with fort**. Fort tiles show their +5 defense and
+  zero income. Battle previews include both capital and fort bonuses.
 - With your tile selected, **click an adjacent tile**:
   - your own tile: **Move** with a "how many" control, defaulting to all ready
     armies;
@@ -109,6 +130,11 @@ preview shows the win chance and the result for both outcomes.
 - A short dice line in the recent moves, e.g. "6+1 vs 3+2: captured".
 
 ## 6. Rival behaviour
+
+*Added 2026-11-07:* difficulty Easy / Normal / Hard / Expert, chosen on the New
+match screen; see [doc/ai.md](ai.md). No bonuses at any level.
+
+### Personalities
 
 *Added 2026-11-07 (requested in conversation):* each match the rival gets a
 hidden **personality**, revealed on the result screen. How it is built and

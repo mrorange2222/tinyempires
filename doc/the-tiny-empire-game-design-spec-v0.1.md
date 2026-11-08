@@ -58,6 +58,15 @@ Empty land update ([MAP-004](tickets/MAP-004.md)), approved on 2026-11-04:
 - Island shape, scroll controls, projection, and land/coastline selection are unchanged.
 - Forest and mountain terrain remain future design options, not implemented gameplay.
 
+Generated maps ([issue #4](https://github.com/mrorange2222/tinyempires/issues/4), 2026-11-07):
+- Three sizes, land within a 10x10 area at most: Minuscule (6x6 area, ~22
+  land, 15 rounds), Tiny (8x8, ~35, 20), Small (10x10, ~55, 25).
+- Grown at random from the middle, always connected, and mirror-symmetric
+  through the centre, so both kingdoms get the same land. Inland lakes can
+  appear. Capitals are far apart, top to bottom; each kingdom starts with its
+  capital and two neighbouring tiles (mirrored for the rival).
+- The hand-made island above remains as "Classic" for tests.
+
 ## 4. Rules v0.1: starting state and resources
 
 Approved in conversation on 2026-11-04 and implemented under
@@ -218,10 +227,53 @@ Change the numbers or rules based on play, not to grow the feature list.
 - Simple and elegant, not realistic. Flat vector shapes drawn in code.
 - Fonts: Cinzel (titles), Nunito (text), SIL OFL 1.1.
 - Decorative terrain (groves, hills, meadows) is cosmetic and must never imply
-  a rule. It is drawn under soldiers, tags, crowns and hints so it never hides them.
+  a rule. It is drawn under soldiers, tags, buildings and hints so it never hides them.
+  Built-up tiles (capital, improved) show only a little grass.
 - Armies: stylised helmeted soldiers (one per army, at most three) with a number tag.
+- Capital: a small castle (two towers with roofs in the kingdom colour, gate, flag).
+- Improvements: four farm designs (wheat field with barn, windmill, orchard,
+  sheep pasture). They work the same (+1 gold); the design is picked per tile
+  so the map looks varied. Roofs and flags use the owner's colour.
+- Forts ([issue #7](https://github.com/mrorange2222/tinyempires/issues/7)):
+  low stone bastions with battlements and a kingdom-colour flag, distinct
+  from the capital's roofed castle. Cost 6 gold, +5 defense, zero tile income;
+  can replace a farm and survive capture. Capital bonuses stack.
+  Recruitment now requires land owned at the start of the current turn;
+  newly acquired land must wait until next turn. See current Rules v0.2.
+- Tile layout: buildings along the back, soldiers in front, army tag front-right.
+- All map pieces share one style in `ui/tile_art.gd` (thin dark outline, one
+  shade, a small highlight, a touch of kingdom colour). New pieces should use it.
+- A workshop sketch exists in `tile_art.gd` for a possible later, more
+  expensive improvement; it is not part of the rules.
 - Top bar: kingdom cards with coin, shield and hex icons.
-- Sidebar: cards for the selection, your kingdom, and recent moves.
+- Info cards: selected tile, action (move/attack/claim), your kingdom, and
+  recent moves. Compact (2026-11-07): one slim top bar with both kingdoms'
+  stats, a one-line status bar, the legend in Rules and a tooltip. Wide
+  windows show the cards in a right-hand column; tall windows show them as a
+  row under the map so the island gets the full width.
+
+## 12b. Title screen and options ([issue #6](https://github.com/mrorange2222/tinyempires/issues/6), 2026-11-08)
+
+- The game opens on a title screen drawn in code in the map-piece style: a
+  dusk sky with stars, sun and drifting clouds, far hills with a tower, a sea
+  with sun glitter, and a small hex island with a large castle flying a blue
+  and a coral banner, a turning windmill, farms and soldiers of both kingdoms.
+  Title in Cinzel, tagline "One island. Two crowns."
+- Menu: New Game (match choices; Back returns), How to Play (rules),
+  Options, Exit Game.
+- Options, saved with the match choices: rival speed Fast / Normal / Slow
+  (0.4 / 0.7 / 1.0 s per move), Windowed / Fullscreen, map hints On / Off.
+- In a match, the Menu button returns immediately to the title screen without
+  a confirmation dialog. New Game is available there, not in the in-game
+  top bar.
+  Resume appears for an unfinished match in the current session. Menu visits
+  preserve match state and selection, pausing the rival until Resume.
+  New Game replaces the match only when Start is pressed; Back keeps it.
+  Resume is unavailable at launch and after a match finishes. No disk saves:
+  exiting the application loses the match.
+- Victory, defeat and draw dialogs offer Play another match or Main Menu.
+  Main Menu returns directly to the title without offering Resume for the
+  finished match.
 
 ## 13. Current development goal
 
